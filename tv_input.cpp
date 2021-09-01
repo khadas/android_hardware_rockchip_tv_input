@@ -1,4 +1,6 @@
-#define LOG_TAG "TV_INPUT_ROCKCHIP"
+/*
+ * Copyright (c) 2021 Rockchip Electronics Co., Ltd
+ */
 
 #include <errno.h>
 #include <fcntl.h>
@@ -6,14 +8,43 @@
 
 #include <cutils/native_handle.h>
 #include <log/log.h>
+#include <cutils/log.h>
+#include <cutils/native_handle.h>
+#include <ui/GraphicBufferMapper.h>
+#include <ui/GraphicBuffer.h>
+#include <gralloc_priv.h>
+#include <gralloc_helper.h>
 
+#include <linux/videodev2.h>
+#include <android/native_window.h>
+#include <hardware/hardware.h>
 #include <hardware/tv_input.h>
+#include "Ihin.h"
 
-// From libhardware_rockchip_headers
-#include <hardware/tv_input_source.h>
-
+using namespace android;
 #define UNUSED(x) (void *)x
-/*****************************************************************************/
+
+#define DEFAULT_CAPTURE_WIDTH 1920
+#define DEFAULT_CAPTURE_HEIGHT 1080
+
+#ifndef container_of
+#define container_of(ptr, type, member) \
+    (type *)((char*)(ptr) - offsetof(type, member))
+#endif
+
+#define STREAM_ID_GENERIC       1
+#define STREAM_ID_FRAME_CAPTURE 2
+
+// tv input source type
+typedef enum tv_input_source_type {
+    SOURCE_INVALID = -1,
+    SOURCE_HDMI1 = 0,
+    SOURCE_HDMI2,
+    SOURCE_TV,
+    SOURCE_DTV,
+    SOURCE_MAX,
+} tv_input_source_t;
+
 
 typedef struct tv_input_private {
     tv_input_device_t device;
@@ -21,7 +52,16 @@ typedef struct tv_input_private {
     // Callback related data
     const tv_input_callback_ops_t* callback;
     void* callback_data;
+    hin_device_t *mDev;
 } tv_input_private_t;
+
+static native_handle_t *pTvStream = NULL;
+
+/*****************************************************************************/
+
+static const int SCREENSOURCE_GRALLOC_USAGE = (
+    GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_HW_RENDER |
+    GRALLOC_USAGE_SW_READ_RARELY | GRALLOC_USAGE_SW_WRITE_NEVER);
 
 static int tv_input_device_open(const struct hw_module_t* module,
         const char* name, struct hw_device_t** device);
@@ -41,6 +81,28 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
         .methods = &tv_input_module_methods,
     }
 };
+
+static int notifyCaptureSucceeded(tv_input_private_t *priv, int device_id, int stream_id, uint32_t seq)
+{
+    tv_input_event_t event;
+    event.type = TV_INPUT_EVENT_CAPTURE_SUCCEEDED;
+    event.capture_result.device_id = device_id;
+    event.capture_result.stream_id = stream_id;
+    event.capture_result.seq = seq;
+    priv->callback->notify(&priv->device, &event, priv->callback_data);
+    return 0;
+}
+
+static int notifyCaptureFail(tv_input_private_t *priv, int device_id, int stream_id, uint32_t seq)
+{
+    tv_input_event_t event;
+    event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
+    event.capture_result.device_id = device_id;
+    event.capture_result.stream_id = stream_id;
+    event.capture_result.seq = seq;
+    priv->callback->notify(&priv->device, &event, priv->callback_data);
+    return 0;
+}
 
 static int getHdmiPortID(tv_input_source_t source_type) {
     int port_id = 0;
@@ -95,43 +157,28 @@ void findTvDevices(tv_input_private_t *priv) {
     generateEvent(priv, SOURCE_DTV, TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED);
 }
 
-static int tv_input_initialize(struct tv_input_device* dev,
-        const tv_input_callback_ops_t* callback, void* data)
-{
-    ALOGE("%s called", __func__);
-    if (dev == NULL || callback == NULL) {
-        return -EINVAL;
-    }
-    tv_input_private_t* priv = (tv_input_private_t*)dev;
-    if (priv->callback != NULL) {
-        return -EEXIST;
-    }
-
-    priv->callback = callback;
-    priv->callback_data = data;
-    
-    findTvDevices(priv);
-    return 0;
-}
-
 #define NUM_OF_CONFIGS_DEFAULT 2
 static tv_stream_config_t mconfig[NUM_OF_CONFIGS_DEFAULT];
 static int tv_input_get_stream_configurations(
         const struct tv_input_device *dev, int device_id, int *num_of_configs, const tv_stream_config_t **configs)
 {
-    ALOGE("%s called", __func__);
+    ALOGD("%s called device_id=%d", __func__, device_id);
     UNUSED(dev);
+    if (device_id == -1) {
+        *num_of_configs = -1;
+    }
+    
     switch (device_id) {
     case SOURCE_TV:
     case SOURCE_DTV:
     case SOURCE_HDMI1:
     case SOURCE_HDMI2:
         mconfig[0].stream_id = STREAM_ID_GENERIC;
-        mconfig[0].type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+        mconfig[0].type = TV_STREAM_TYPE_BUFFER_PRODUCER;
         mconfig[0].max_video_width = 1920;
         mconfig[0].max_video_height = 1080;
         mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
-        mconfig[1].type = TV_STREAM_TYPE_BUFFER_PRODUCER;
+        mconfig[1].type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
         mconfig[1].max_video_width = 1920;
         mconfig[1].max_video_height = 1080;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
@@ -143,31 +190,97 @@ static int tv_input_get_stream_configurations(
     return 0;
 }
 
+static int getTvStream(tv_stream_t *stream)
+{
+    if (pTvStream == NULL) {
+        pTvStream = native_handle_create(/*numFds*/1, /*numInts*/0);
+        if (pTvStream == nullptr) {
+            ALOGE("tvstream can not be initialized");
+            return -EINVAL;
+        }
+    }
+    stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+    stream->sideband_stream_source_handle = pTvStream;
+    return 0;
+}
+
 static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_stream_t *stream)
 {
-    UNUSED(dev);
-    UNUSED(stream);
-    ALOGE("func: %s, device_id: %d", __func__, device_id);
+    ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->stream_id, stream->type);
+    tv_input_private_t *priv = (tv_input_private_t *)dev;
+
+    if (priv) {
+        if (getTvStream(stream) != 0) {
+            return -EINVAL;
+        }
+        hin_module_t* hinModule;
+        int ret = hw_get_module(HDMI_INPUT_CAPTURE_HARDWARE_MODULE_ID, (const hw_module_t**)&hinModule);
+        if (ret < 0) {
+            ALOGD("Get hdmi input capture module failed!!! ret = %d.\n", ret);
+        } else {
+            hinModule->common.methods->open((const hw_module_t*)hinModule,
+                HDMI_INPUT_DEVICE, (struct hw_device_t**)&(priv->mDev));
+        }
+
+        if (priv->mDev) {
+            priv->mDev->ops.set_format(priv->mDev, DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT, V4L2_PIX_FMT_NV21);
+            //priv->mDev->ops.set_port_type(priv->mDev, (int)0x4000);
+            priv->mDev->ops.start_device(priv->mDev);
+        }
+        return 0;
+    }
     return -EINVAL;
 }
 
 static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int stream_id)
 {
-    UNUSED(dev);
-    ALOGE("func: %s, device_id: %d, stream_id: %d", __func__, device_id, stream_id);
+    ALOGD("func: %s, device_id: %d, stream_id: %d", __func__, device_id, stream_id);
+    tv_input_private_t *priv = (tv_input_private_t *)dev;
+
+    if (priv) {
+        if (priv->mDev) {
+            priv->mDev->ops.stop_device(priv->mDev);
+        }
+    }
     return -EINVAL;
 }
 
-static int tv_input_request_capture(
-        struct tv_input_device*, int, int, buffer_handle_t, uint32_t)
+static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
+            int stream_id, buffer_handle_t buffer, uint32_t seq)
 {
-    ALOGE("%s called", __func__);
+    ALOGD("%s called", __func__);
+    tv_input_private_t *priv = (tv_input_private_t *)dev;
+    unsigned char *dest = NULL;
+    if (priv->mDev) {
+        source_buffer_info_t buffInfo;
+        int ret = priv->mDev->ops.aquire_buffer(priv->mDev, &buffInfo);
+        if (ret != 0 || buffInfo.buffer_mem == nullptr) {
+            ALOGD("aquire_buffer FAILED!!!");
+            return -EWOULDBLOCK;
+        }
+        long *src = (long*)buffInfo.buffer_mem;
+
+        ANativeWindowBuffer *buf = NULL;// = contains_of(buffer, ANativeWindowBuffer, handle);
+        sp<GraphicBuffer> graphicBuffer(new GraphicBuffer(buf->handle, GraphicBuffer::WRAP_HANDLE,
+            buf->width, buf->height, buf->format, buf->layerCount, buf->usage, buf->stride));
+
+        graphicBuffer->lock(SCREENSOURCE_GRALLOC_USAGE, (void **)&dest);
+        if (dest == NULL) {
+            ALOGD("grallocBuffer->lock FAILED!!!");
+            return -EWOULDBLOCK;
+        }
+        memcpy(dest, src, DEFAULT_CAPTURE_WIDTH*DEFAULT_CAPTURE_HEIGHT);
+        graphicBuffer->unlock();
+        graphicBuffer.clear();
+        priv->mDev->ops.release_buffer(priv->mDev, src);
+    }
+
     return -EINVAL;
 }
 
 static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 {
-    ALOGE("%s called", __func__);
+    ALOGD("%s called", __func__);
     return -EINVAL;
 }
 
@@ -175,11 +288,32 @@ static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 
 static int tv_input_device_close(struct hw_device_t *dev)
 {
-    ALOGE("%s called", __func__);
+    ALOGD("%s called", __func__);
     tv_input_private_t* priv = (tv_input_private_t*)dev;
     if (priv) {
+        if (priv->mDev) {
+            delete priv->mDev;
+            priv->mDev = nullptr;
+        }
         free(priv);
     }
+    native_handle_delete(pTvStream);
+    return 0;
+}
+
+static int tv_input_initialize(struct tv_input_device* dev,
+        const tv_input_callback_ops_t* callback, void* data)
+{
+    ALOGD("%s called", __func__);
+    if (dev == NULL || callback == NULL) {
+        return -EINVAL;
+    }
+    tv_input_private_t* priv = (tv_input_private_t*)dev;
+
+    priv->callback = callback;
+    priv->callback_data = data;
+    
+    findTvDevices(priv);
     return 0;
 }
 
@@ -188,7 +322,7 @@ static int tv_input_device_close(struct hw_device_t *dev)
 static int tv_input_device_open(const struct hw_module_t* module,
         const char* name, struct hw_device_t** device)
 {
-    ALOGE("%s name: %s", __func__, name);
+    ALOGD("%s name: %s", __func__, name);
     int status = -EINVAL;
     if (!strcmp(name, TV_INPUT_DEFAULT_DEVICE)) {
         tv_input_private_t* dev = (tv_input_private_t*)malloc(sizeof(*dev));
@@ -212,7 +346,8 @@ static int tv_input_device_open(const struct hw_module_t* module,
 
         *device = &dev->device.common;
         status = 0;
-        ALOGE("%s name: %s %d", __func__, name, status);
+        ALOGD("%s name: %s %d", __func__, name, status);
     }
     return status;
 }
+
