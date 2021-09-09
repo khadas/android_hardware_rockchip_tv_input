@@ -31,8 +31,8 @@
 
 namespace android {
 
-#define DEFAULT_SIDEBAND_WIDTH          1920
-#define DEFAULT_SIDEBAND_HEIGHT         1080
+#define DEFAULT_SIDEBAND_WIDTH          2560
+#define DEFAULT_SIDEBAND_HEIGHT         1440
 #define DEFAULT_SIDEBAND_FORMAT         0x15        //NV12
 
 #define MIN_BUFFER_COUNT_UNDEQUEUE      2

@@ -28,8 +28,8 @@
 using namespace android;
 #define UNUSED(x) (void *)x
 
-#define DEFAULT_CAPTURE_WIDTH 1920
-#define DEFAULT_CAPTURE_HEIGHT 1080
+#define DEFAULT_CAPTURE_WIDTH 2560
+#define DEFAULT_CAPTURE_HEIGHT 1440
 
 #ifndef container_of
 #define container_of(ptr, type, member) \

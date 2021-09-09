@@ -370,7 +370,11 @@ int HinDevImpl::cacheToDisplay() {
     ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->queueBuf);
     if (ret < 0) {
         ALOGE("VIDIOC_DQBUF Failed, error: %s", strerror(errno));
-        return -1;
+        if (errno == EAGAIN) {
+            return -EAGAIN;
+        } else {            
+            return -1;
+        }
     }
 
     ALOGD("makeDisplayCache -> VIDIOC_DQBUF queueBuf.index=%d", mHinNodeInfo->queueBuf.index);
@@ -668,7 +672,11 @@ int HinDevImpl::aquire_buffer()
     ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->queueBuf);
     if (ret < 0) {
         ALOGE("VIDIOC_DQBUF Failed, error: %s", strerror(errno));
-        return ret;
+        if (errno == EAGAIN) {
+            return -EAGAIN;
+        } else {
+            return -1;
+        }
     }
 
     ALOGD("VIDIOC_DQBUF queueBuf.index=%d", mHinNodeInfo->queueBuf.index);
