@@ -9,7 +9,6 @@
 #include <cutils/native_handle.h>
 #include <log/log.h>
 #include <cutils/log.h>
-#include <cutils/native_handle.h>
 #include <ui/GraphicBufferMapper.h>
 #include <ui/GraphicBuffer.h>
 #include <gralloc_priv.h>
@@ -19,7 +18,12 @@
 #include <android/native_window.h>
 #include <hardware/hardware.h>
 #include <hardware/tv_input.h>
-#include "Ihin.h"
+#include "hinDev.h"
+
+#ifdef LOG_TAG
+#undef LOG_TAG
+#define LOG_TAG "tv_input"
+#endif
 
 using namespace android;
 #define UNUSED(x) (void *)x
@@ -31,6 +35,8 @@ using namespace android;
 #define container_of(ptr, type, member) \
     (type *)((char*)(ptr) - offsetof(type, member))
 #endif
+
+#define MAX_HIN_DEVICE_SUPPORTED    10
 
 #define STREAM_ID_GENERIC       1
 #define STREAM_ID_FRAME_CAPTURE 2
@@ -52,10 +58,15 @@ typedef struct tv_input_private {
     // Callback related data
     const tv_input_callback_ops_t* callback;
     void* callback_data;
-    hin_device_t *mDev;
+    HinDevImpl* mDev;
 } tv_input_private_t;
 
-static native_handle_t *pTvStream = NULL;
+
+//static unsigned int gHinDevOpened = 0;
+//static Mutex gHinDevOpenLock;
+//static HinDevImpl* gHinHals[MAX_HIN_DEVICE_SUPPORTED];
+
+//static native_handle_t *pTvStream = NULL;
 
 /*****************************************************************************/
 
@@ -190,17 +201,32 @@ static int tv_input_get_stream_configurations(
     return 0;
 }
 
-static int getTvStream(tv_stream_t *stream)
+static int hin_dev_open(tv_input_private_t *tvInputPrivS, int deviceId)
 {
-    if (pTvStream == NULL) {
-        pTvStream = native_handle_create(/*numFds*/1, /*numInts*/0);
-        if (pTvStream == nullptr) {
-            ALOGE("tvstream can not be initialized");
+    ALOGD("hin_dev_open");
+    HinDevImpl* hinDevImpl = NULL;
+    //Mutex::Autolock lock(gHinDevOpenLock);
+
+    if (deviceId != -1) {
+        if (deviceId >=  MAX_HIN_DEVICE_SUPPORTED) {
+            ALOGD("provided device id out of bounds , deviceid = %d .\n" , deviceId);
             return -EINVAL;
         }
+
+        hinDevImpl = new HinDevImpl;
+        if (!hinDevImpl) {
+            ALOGE("no memory to new hinDevImpl");
+            return -ENOMEM;
+        }
+
+        if (hinDevImpl->init(deviceId)!= 0) {
+            ALOGE("hinDevImpl->init %d failed!", deviceId);
+            delete hinDevImpl;
+            return -1;
+        }
+
+        tvInputPrivS->mDev = hinDevImpl;
     }
-    stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-    stream->sideband_stream_source_handle = pTvStream;
     return 0;
 }
 
@@ -210,22 +236,19 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
     tv_input_private_t *priv = (tv_input_private_t *)dev;
 
     if (priv) {
-        if (getTvStream(stream) != 0) {
+
+        if (hin_dev_open(priv, device_id) < 0) {
+            ALOGD("Open hdmi failed!!!\n");
             return -EINVAL;
-        }
-        hin_module_t* hinModule;
-        int ret = hw_get_module(HDMI_INPUT_CAPTURE_HARDWARE_MODULE_ID, (const hw_module_t**)&hinModule);
-        if (ret < 0) {
-            ALOGD("Get hdmi input capture module failed!!! ret = %d.\n", ret);
-        } else {
-            hinModule->common.methods->open((const hw_module_t*)hinModule,
-                HDMI_INPUT_DEVICE, (struct hw_device_t**)&(priv->mDev));
         }
 
         if (priv->mDev) {
-            priv->mDev->ops.set_format(priv->mDev, DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT, V4L2_PIX_FMT_NV21);
-            //priv->mDev->ops.set_port_type(priv->mDev, (int)0x4000);
-            priv->mDev->ops.start_device(priv->mDev);
+            stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+            stream->sideband_stream_source_handle = native_handle_clone(priv->mDev->getSindebandBufferHandle());
+
+            priv->mDev->set_format(DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT, HAL_PIXEL_FORMAT_YCrCb_NV12);
+            priv->mDev->set_crop(0, 0, DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT);
+            priv->mDev->start();
         }
         return 0;
     }
@@ -239,7 +262,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 
     if (priv) {
         if (priv->mDev) {
-            priv->mDev->ops.stop_device(priv->mDev);
+            priv->mDev->stop_device();
         }
     }
     return -EINVAL;
@@ -249,18 +272,20 @@ static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
             int stream_id, buffer_handle_t buffer, uint32_t seq)
 {
     ALOGD("%s called", __func__);
+ #if 0
     tv_input_private_t *priv = (tv_input_private_t *)dev;
     unsigned char *dest = NULL;
     if (priv->mDev) {
         source_buffer_info_t buffInfo;
-        int ret = priv->mDev->ops.aquire_buffer(priv->mDev, &buffInfo);
+        int ret = priv->mDev->aquire_buffer(&buffInfo);
         if (ret != 0 || buffInfo.buffer_mem == nullptr) {
             ALOGD("aquire_buffer FAILED!!!");
+            notifyCaptureFail(priv,device_id,stream_id,--seq);
             return -EWOULDBLOCK;
         }
         long *src = (long*)buffInfo.buffer_mem;
 
-        ANativeWindowBuffer *buf = NULL;// = contains_of(buffer, ANativeWindowBuffer, handle);
+        ANativeWindowBuffer *buf = container_of(buffer, ANativeWindowBuffer, handle);
         sp<GraphicBuffer> graphicBuffer(new GraphicBuffer(buf->handle, GraphicBuffer::WRAP_HANDLE,
             buf->width, buf->height, buf->format, buf->layerCount, buf->usage, buf->stride));
 
@@ -272,9 +297,12 @@ static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
         memcpy(dest, src, DEFAULT_CAPTURE_WIDTH*DEFAULT_CAPTURE_HEIGHT);
         graphicBuffer->unlock();
         graphicBuffer.clear();
-        priv->mDev->ops.release_buffer(priv->mDev, src);
-    }
+        priv->mDev->release_buffer(src);
 
+        notifyCaptureSucceeded(priv, device_id, stream_id, seq);
+        return 0;
+    }
+#endif
     return -EINVAL;
 }
 
@@ -297,7 +325,6 @@ static int tv_input_device_close(struct hw_device_t *dev)
         }
         free(priv);
     }
-    native_handle_delete(pTvStream);
     return 0;
 }
 

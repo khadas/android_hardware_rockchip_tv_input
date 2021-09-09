@@ -17,22 +17,28 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := tv_input.rockchip
-LOCAL_CFLAGS:= -DLOG_TAG=\"tv_input\"
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-uninitialized -Wno-unused-variable
+LOCAL_CFLAGS += -Wno-unused-parameter -Wno-uninitialized -Wno-unused-variable -Wno-unused-function
 
 LOCAL_SRC_FILES := \
-    tv_input.cpp \
+    common/tvinput_buffer_manager_gralloc4_impl.cpp \
+    sideband/RTSidebandWindow.cpp \
+    sideband/DrmVopRender.cpp \
+    sideband/MessageThread.cpp \
+    hinDevImpl.cpp \
+    tv_input.cpp
 
 LOCAL_SHARED_LIBRARIES := \
+    libbase \
     libcutils \
     libutils \
     libbinder \
     libui \
     liblog \
+    libdrm \
     libhardware
 
 LOCAL_C_INCLUDES += \
@@ -41,10 +47,34 @@ LOCAL_C_INCLUDES += \
     hardware/libhardware/include \
     hardware/libhardware/include/hardware \
     system/core/libutils/include \
-	system/core/include/utils \
+	system/core/libcutils/include/cutils/ \
     hardware/rockchip/libgralloc/bifrost \
     hardware/rockchip/libgralloc/bifrost/src \
     hardware/rockchip/hdmi_capture \
     frameworks/native/libs/nativewindow/include \
+    $(LOCAL_PATH)/common \
+    $(LOCAL_PATH)/sideband
+
+LOCAL_STATIC_LIBRARIES += \
+       libgrallocusage
+
+LOCAL_SHARED_LIBRARIES += \
+    android.hardware.graphics.allocator@2.0 \
+    android.hardware.graphics.allocator@3.0 \
+    android.hardware.graphics.allocator@4.0 \
+    android.hardware.graphics.common@1.2 \
+    android.hardware.graphics.mapper@2.0 \
+    android.hardware.graphics.mapper@2.1 \
+    android.hardware.graphics.mapper@3.0 \
+    android.hardware.graphics.mapper@4.0 \
+    libgralloctypes \
+    libhidlbase \
+    libsync_vendor
+
+LOCAL_HEADER_LIBRARIES += \
+    android.hardware.graphics.common@1.2 \
+    android.hardware.graphics.mapper@4.0 \
+    libgralloctypes
+
 
 include $(BUILD_SHARED_LIBRARY)
