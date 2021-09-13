@@ -224,6 +224,9 @@ class EXPORTED TvInputBufferManager {
   // Returns:
   //    fd
   virtual int GetHandleFd(buffer_handle_t buffer) = 0;
+  virtual int GetBufferId(buffer_handle_t buffer) = 0;
+  virtual int get_width(buffer_handle_t handle) = 0;
+  virtual int get_height(buffer_handle_t handle) = 0;
 
   // This method is used to get handle buffer size.
   //
@@ -232,7 +235,7 @@ class EXPORTED TvInputBufferManager {
   //
   // Returns:
   //    buffer size
-  virtual int GetHandleBufferSize(buffer_handle_t handle, uint64_t* bufferSize) = 0;
+  virtual int GetHandleBufferSize(buffer_handle_t handle) = 0;
 
   // Get the number of physical planes associated with |buffer|.
   //

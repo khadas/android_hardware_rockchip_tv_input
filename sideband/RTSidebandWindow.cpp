@@ -35,7 +35,7 @@ namespace android {
 #define DEFAULT_SIDEBAND_HEIGHT         1440
 #define DEFAULT_SIDEBAND_FORMAT         0x15        //NV12
 
-#define MIN_BUFFER_COUNT_UNDEQUEUE      2
+#define MIN_BUFFER_COUNT_UNDEQUEUE      0
 
 RTSidebandWindow::RTSidebandWindow()
         : mBuffMgr(nullptr),
@@ -84,7 +84,7 @@ __FAILED:
 }
 
 status_t RTSidebandWindow::release() {
-    ALOGV("%s %d in", __FUNCTION__, __LINE__);
+    ALOGD("%s %d in", __FUNCTION__, __LINE__);
     requestExitAndWait();
     if (mMessageThread != NULL) {
         mMessageThread.reset();
@@ -190,7 +190,7 @@ status_t RTSidebandWindow::remainBuffer(buffer_handle_t buffer) {
 status_t RTSidebandWindow::dequeueBuffer(buffer_handle_t *buffer) {
     buffer_handle_t tmpBuffer = NULL;
     status_t status = 0;
-    ALOGV("dequeueBuffer size: %d", (int32_t)mRenderingQueue.size());
+    ALOGD("dequeueBuffer size: %d", (int32_t)mRenderingQueue.size());
     if (mRenderingQueue.size() > MIN_BUFFER_COUNT_UNDEQUEUE) {
         tmpBuffer = mRenderingQueue.front();
         Message msg;
@@ -205,7 +205,7 @@ status_t RTSidebandWindow::dequeueBuffer(buffer_handle_t *buffer) {
 
 status_t RTSidebandWindow::queueBuffer(buffer_handle_t buffer) {
     (void)buffer;
-    ALOGV("%s %d in buffer: %p queue size: %d", __FUNCTION__, __LINE__, buffer, (int32_t)mRenderingQueue.size());
+    ALOGD("%s %d in buffer: %p queue size: %d", __FUNCTION__, __LINE__, buffer, (int32_t)mRenderingQueue.size());
     Message msg;
     memset(&msg, 0, sizeof(Message));
     msg.id = MESSAGE_ID_RENDER_REQUEST;
@@ -285,10 +285,11 @@ status_t RTSidebandWindow::handleMessageExit() {
 
 status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     buffer_handle_t buffer = msg.streamBuffer.buffer;
-    ALOGV("%s %d buffer: %p in", __FUNCTION__, __LINE__, buffer);
+    ALOGD("%s %d buffer: %p in", __FUNCTION__, __LINE__, buffer);
     mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer);
 
     mRenderingQueue.push_back(buffer);
+    ALOGD("%s    mRenderingQueue.size() = %d", __FUNCTION__, (int32_t)mRenderingQueue.size());
 
     return 0;
 }
@@ -322,10 +323,7 @@ int RTSidebandWindow::getBufferLength(buffer_handle_t buffer) {
         ALOGE("%s param buffer is NULL.", __FUNCTION__);
         return -1;
     }
-    uint64_t len = 0;
-    mBuffMgr->GetHandleBufferSize(buffer, &len);
-    ALOGD("getBufferLength len = %d", (int)len);
-    return (int)len;
+    return mBuffMgr->GetHandleBufferSize(buffer);
 }
 
 }

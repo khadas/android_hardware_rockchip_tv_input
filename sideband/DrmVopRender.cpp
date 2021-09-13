@@ -7,6 +7,8 @@
 #include <sys/mman.h>
 #include <cutils/properties.h>
 
+#include "tvinput_buffer_manager.h"
+
 #define HAS_ATOMIC 1
 
 #define PROPERTY_TYPE "vendor"
@@ -296,7 +298,6 @@ int DrmVopRender::FindSidebandPlane(int device) {
         ALOGE("device is not connected,outputIndex=%d",outputIndex);
         return false;
     }
-
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
         props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
@@ -308,11 +309,10 @@ int DrmVopRender::FindSidebandPlane(int device) {
             prop = drmModeGetProperty(mDrmFd, props->props[j]);
             if (!strcmp(prop->name, "ASYNC_COMMIT")) {
                 ALOGV("find ASYNC_COMMIT plane id=%d value=%lld", plane->plane_id, (long long)props->prop_values[j]);
-                if (props->prop_values[j]) {
+                if (props->prop_values[j] != 0) {
                     find_plan_id = plane->plane_id;
-                    /*if (prop)
+                    if (prop)
                         drmModeFreeProperty(prop);
-                    */
                     break;
                 }
             }
@@ -323,7 +323,6 @@ int DrmVopRender::FindSidebandPlane(int device) {
             drmModeFreeObjectProperties(props);
         if(plane)
             drmModeFreePlane(plane);
-        ALOGV("FindSidebandPlane find_plan_id1=%d", find_plan_id);
         if (find_plan_id > 0) {
             break;
         }
@@ -331,17 +330,20 @@ int DrmVopRender::FindSidebandPlane(int device) {
     if (find_plan_id == 0) {
        return -1;
     }
+    ALOGV("FindSidebandPlane find_plan_id=%d", find_plan_id);
     return find_plan_id;
 }
 
 int DrmVopRender::getFbLength(buffer_handle_t handle) {
-    int fd = 0;
-    int fbLen = 0;
-    gralloc_->perform(gralloc_,
-                      GRALLOC_MODULE_PERFORM_GET_HADNLE_PRIME_FD,
-                      handle, &fd);
-    gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_SIZE, handle, &fbLen);
-    return fbLen;
+    if (!handle) {
+        ALOGE("%s buffer_handle_t is NULL.", __FUNCTION__);
+        return -1;
+    } else {
+        ALOGE("%s %p", __FUNCTION__, handle);
+    }
+
+    common::TvInputBufferManager* tvBufferMgr = common::TvInputBufferManager::GetInstance();
+    return tvBufferMgr->GetHandleBufferSize(handle);
 }
 
 int DrmVopRender::getFbid(buffer_handle_t handle) {
@@ -352,6 +354,8 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         ALOGE("%s %p", __FUNCTION__, handle);
     }
 
+    common::TvInputBufferManager* tvBufferMgr = common::TvInputBufferManager::GetInstance();
+
     hwc_drm_bo_t bo;
     int fd = 0;
     int ret = 0;
@@ -360,22 +364,25 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
     int src_format = 0;
     int src_stride = 0;
 
-    gralloc_->perform(gralloc_,
-                      GRALLOC_MODULE_PERFORM_GET_HADNLE_PRIME_FD,
-                      handle, &fd);
+    fd = (int)tvBufferMgr->GetHandleFd(handle);
     std::map<int, int>::iterator it = mFbidMap.find(fd);
     int fbid = 0;
     if (it == mFbidMap.end()) {
         memset(&bo, 0, sizeof(hwc_drm_bo_t));
         uint32_t gem_handle;
-        gralloc_->perform(gralloc_,
-                        GRALLOC_MODULE_PERFORM_GET_HADNLE_PRIME_FD,
-                        handle, &fd);
+        //size_t plane_size;
+        fd = (int)tvBufferMgr->GetHandleFd(handle);
         ret = drmPrimeFDToHandle(mDrmFd, fd, &gem_handle);
-        gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_WIDTH, handle, &src_w);
-        gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_HEIGHT, handle, &src_h);
-        gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
-        gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_BYTE_STRIDE, handle, &src_stride);
+        src_w = tvBufferMgr->get_width(handle);
+        src_h = tvBufferMgr->get_height(handle);
+        src_format = tvBufferMgr->GetV4L2PixelFormat(handle);
+        //plane_size = tvBufferMgr->GetNumPlanes(handle);
+        src_stride = (int)tvBufferMgr->GetPlaneStride(handle, tvBufferMgr->GetNumPlanes(handle));
+
+        //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_WIDTH, handle, &src_w);
+        //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_HEIGHT, handle, &src_h);
+        //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
+        //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_BYTE_STRIDE, handle, &src_stride);
         bo.width = src_w;
         bo.height = src_h;
         bo.format = ConvertHalFormatToDrm(src_format);
@@ -392,7 +399,7 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.width = src_w / 1.25;
             bo.width = ALIGN_DOWN(bo.width, 2);
         }
-        ALOGV("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
+        ALOGD("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
         ret = drmModeAddFB2(mDrmFd, bo.width, bo.height, bo.format, bo.gem_handles,\
                      bo.pitches, bo.offsets, &bo.fb_id, 0);
         fbid = bo.fb_id;
@@ -437,6 +444,7 @@ void DrmVopRender::resetOutput(int index)
 }
 
 bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle) {
+    ALOGD("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
     int ret = 0;
     int plane_id = FindSidebandPlane(device);
     int fb_id = getFbid(handle);
@@ -457,7 +465,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     char sideband_crop[PROPERTY_VALUE_MAX];
     memset(sideband_crop, 0, sizeof(sideband_crop));
     DrmOutput *output= &mOutputs[device];
-    int length = property_get(PROPERTY_TYPE ".sideband.crop", sideband_crop, NULL);
+    int length = property_get("vendor.hwc.sideband.crop", sideband_crop, NULL);
     if (length > 0) {
        sscanf(sideband_crop, "%d-%d-%d-%d-%d-%d-%d-%d",\
               &src_left, &src_top, &src_right, &src_bottom,\
@@ -470,8 +478,13 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     }
     src_w = width;
     src_h = height;
-    gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
-    ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
+    //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
+    ALOGD("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
+    ALOGD("\n mDrmFd=%d \n", mDrmFd);
+    ALOGD("\n plane_id=%d \n", plane_id);
+    ALOGD("\n output->crtc->crtc_id=%d \n", output->crtc->crtc_id);
+    ALOGD("\n fb_id=%d \n", fb_id);
+    ALOGD("\n flags=%d \n", flags);
     if (plane_id > 0) {
         ret = drmModeSetPlane(mDrmFd, plane_id,
                           output->crtc->crtc_id, fb_id, flags,
@@ -479,9 +492,10 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                           dst_w, dst_h,
                           0, 0,
                           src_w << 16, src_h << 16);
+        ALOGD("drmModeSetPlane ret=%s", strerror(ret));
 
     }
-
+    ALOGD("%s end.", __FUNCTION__);
     return true;
 }
 

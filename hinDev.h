@@ -39,7 +39,7 @@ using namespace android;
 
 //#define NB_BUFFER 6
 
-#define SIDEBAND_WINDOW_BUFF_CNT 4
+#define SIDEBAND_WINDOW_BUFF_CNT 1
 
 typedef struct source_buffer_info {
     buffer_handle_t source_buffer_handle_t;
@@ -51,10 +51,10 @@ typedef struct source_buffer_info {
 struct HinNodeInfo {
     struct v4l2_capability cap;
     struct v4l2_format format;
-    struct v4l2_buffer queueBuf;
+    struct v4l2_buffer onceBuff;
     struct v4l2_requestbuffers reqBuf;
     struct v4l2_buffer bufferArray[SIDEBAND_WINDOW_BUFF_CNT];
-    buffer_handle_t handle_t[SIDEBAND_WINDOW_BUFF_CNT];
+    buffer_handle_t buffer_handle_poll[SIDEBAND_WINDOW_BUFF_CNT];
 //    long *mem[SIDEBAND_WINDOW_BUFF_CNT];
 //    unsigned reservedData[SIDEBAND_WINDOW_BUFF_CNT];
 //    unsigned refcount[SIDEBAND_WINDOW_BUFF_CNT];

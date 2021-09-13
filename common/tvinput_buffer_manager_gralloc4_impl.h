@@ -84,7 +84,10 @@ public:
     int Unlock(buffer_handle_t buffer) final;
     int FlushCache(buffer_handle_t buffer) final;
     int GetHandleFd(buffer_handle_t buffer) final;
-    int GetHandleBufferSize(buffer_handle_t handle, uint64_t* bufferSize) final;  
+    int GetHandleBufferSize(buffer_handle_t handle) final;  
+    int GetBufferId(buffer_handle_t buffer) final;
+    int get_width(buffer_handle_t handle) final;
+    int get_height(buffer_handle_t handle) final;
 
 private:
     static int GetHalPixelFormat(buffer_handle_t buffer);
@@ -99,8 +102,6 @@ private:
                               uint32_t* out_stride);
 
 	//uint64_t get_internal_format_from_fourcc(uint32_t fourcc, uint64_t modifier);
-    static int get_width(buffer_handle_t handle, uint64_t* width);
-	static int get_height(buffer_handle_t handle, uint64_t* height);
 	status_t validateBufferDescriptorInfo(
         IMapper::BufferDescriptorInfo* descriptorInfo) const;
 	status_t createDescriptor(void* bufferDescriptorInfo,

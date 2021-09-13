@@ -23,7 +23,7 @@
 #include <sys/prctl.h>
 #include <string.h>
 #include "log/log.h"
-#define PRIORITY_CAMERA (-10)
+#define PRIORITY_CAMERA (8)
 
 namespace android {
 

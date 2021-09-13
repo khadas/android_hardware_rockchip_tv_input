@@ -27,6 +27,8 @@ using android::hardware::graphics::mapper::V4_0::BufferDescriptor;
 using android::hardware::hidl_vec;
 
 using android::gralloc4::MetadataType_PlaneLayouts;
+using android::gralloc4::MetadataType_BufferId;
+using android::gralloc4::decodeBufferId;
 using android::gralloc4::decodePlaneLayouts;
 using android::gralloc4::MetadataType_Usage;
 using android::gralloc4::decodeUsage;
@@ -236,45 +238,48 @@ uint32_t TvInputBufferManager::GetV4L2PixelFormat(buffer_handle_t buffer) {
     return 0;
 }
 
-int TvInputBufferManagerImpl::get_width(buffer_handle_t handle, uint64_t* width)
+int TvInputBufferManagerImpl::get_width(buffer_handle_t handle)
 {
     auto &mapper = get_mapperservice();
+    uint64_t width;
 
-    int err = get_metadata(mapper, handle, MetadataType_Width, decodeWidth, width);
+    int err = get_metadata(mapper, handle, MetadataType_Width, decodeWidth, &width);
     if (err != android::OK)
     {
         ALOGE(" %s error: %d", __FUNCTION__, err);
     }
 
-    return err;
+    return (int)width;
 }
 
-int TvInputBufferManagerImpl::get_height(buffer_handle_t handle, uint64_t* height)
+int TvInputBufferManagerImpl::get_height(buffer_handle_t handle)
 {
     auto &mapper = get_mapperservice();
+    uint64_t height;
 
-    int err = get_metadata(mapper, handle, MetadataType_Height, decodeHeight, height);
+    int err = get_metadata(mapper, handle, MetadataType_Height, decodeHeight, &height);
     if (err != android::OK)
     {
         ALOGE(" %s error: %d", __FUNCTION__, err);
     }
 
-    return err;
+    return (int)height;
 }
 
-int TvInputBufferManagerImpl::GetHandleBufferSize(buffer_handle_t handle, uint64_t* bufferSize) {
+int TvInputBufferManagerImpl::GetHandleBufferSize(buffer_handle_t handle) {
     ALOGD("GetHandleBufferSize handle:%p", handle);
 
     auto &mapper = get_mapperservice();
+    uint64_t bufferSize;
 
-    int err = get_metadata(mapper, handle, MetadataType_AllocationSize, decodeAllocationSize, bufferSize);
+    int err = get_metadata(mapper, handle, MetadataType_AllocationSize, decodeAllocationSize, &bufferSize);
     if (err != android::OK)
     {
         ALOGE("Failed to get allocation_size. err : %d", err);
         return err;
     }
 
-    return 0;
+    return (int)bufferSize;
 }
 
 // static
@@ -318,12 +323,7 @@ size_t TvInputBufferManager::GetPlaneStride(buffer_handle_t buffer,
         uint64_t width;
         int byte_stride;
 
-        int err = TvInputBufferManagerImpl::get_width(buffer, &width);
-        if (err != android::OK )
-        {
-            ALOGE("err : %d", err);
-            return err;
-        }
+        width = GetInstance()->get_width(buffer);
 
         // .trick : from CSY : 分配 rk_video_decoder 输出 buffers 时, 要求的 byte_stride of buffer in NV12_10, 已经通过 width 传入.
         //          原理上, NV12_10 的 pixel_stride 和 byte_stride 是不同的, 但是这里保留 之前 rk_drm_gralloc 的赋值方式.
@@ -373,12 +373,7 @@ size_t TvInputBufferManager::GetPlaneSize(buffer_handle_t buffer, size_t plane) 
         uint64_t width;
         int byte_stride;
 
-        int err = TvInputBufferManagerImpl::get_width(buffer, &width);
-        if (err != android::OK )
-        {
-            ALOGE("err : %d", err);
-            return err;
-        }
+        width = GetInstance()->get_width(buffer);
 
         // .trick : from CSY : 分配 rk_video_decoder 输出 buffers 时, 要求的 byte_stride of buffer in NV12_10, 已经通过 width 传入.
         //          原理上, NV12_10 的 pixel_stride 和 byte_stride 是不同的, 但是这里保留 之前 rk_drm_gralloc 的赋值方式.
@@ -944,6 +939,22 @@ int TvInputBufferManagerImpl::FlushCache(buffer_handle_t buffer) {
     return 0;
 }
 
+int TvInputBufferManagerImpl::GetBufferId(buffer_handle_t buffer) {
+    ALOGD("GetBufferId buffer:%p", buffer);
+    uint64_t buffer_id = -1;
+
+    auto &mapper = get_mapperservice();
+
+    int err = get_metadata(mapper, buffer, MetadataType_BufferId, decodeBufferId, &buffer_id);
+    if (err != android::OK)
+    {
+        ALOGE("Failed to get plane_fds. err : %d", err);
+        return err;
+    }
+
+    return (int32_t)buffer_id;
+}
+
 int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
     ALOGD("GetHandleFd buffer:%p", buffer);
     int fd = -1;
@@ -973,7 +984,7 @@ int TvInputBufferManagerImpl::AllocateGrallocBuffer(size_t width,
     ALOGD("AllocateGrallocBuffer %zu, %zu, %u, %u", width, height, format, usage);
 
     IMapper::BufferDescriptorInfo descriptorInfo;
-    sBufferDescriptorInfo("allocateBuffer", width, height, (PixelFormat)format, 1/*layerCount*/, usage, &descriptorInfo);
+    sBufferDescriptorInfo("tv_input_SidebandStream", width, height, (PixelFormat)format, 1/*layerCount*/, usage, &descriptorInfo);
 
     BufferDescriptor descriptor;
     status_t error = createDescriptor(static_cast<void*>(&descriptorInfo),

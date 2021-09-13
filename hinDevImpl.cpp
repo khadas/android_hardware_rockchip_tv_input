@@ -27,6 +27,8 @@
 #include <ui/GraphicBuffer.h>
 #include <linux/videodev2.h>
 
+//#define DUMP_YUV
+
 #define V4L2_ROTATE_ID 0x980922
 
 #ifndef container_of
@@ -290,6 +292,11 @@ int HinDevImpl::start_device()
         ALOGE("VIDIOC_QUERYCAP Failed, error: %s", strerror(errno));
         return ret;
     }
+    ALOGD("VIDIOC_QUERYCAP driver=%s", mHinNodeInfo->cap.driver);
+    ALOGD("VIDIOC_QUERYCAP card=%s", mHinNodeInfo->cap.card);
+    ALOGD("VIDIOC_QUERYCAP version=%d", mHinNodeInfo->cap.version);
+    ALOGD("VIDIOC_QUERYCAP capabilities=%08x", mHinNodeInfo->cap.capabilities);
+    ALOGD("VIDIOC_QUERYCAP device_caps=%08x", mHinNodeInfo->cap.device_caps);
 
     mHinNodeInfo->reqBuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     mHinNodeInfo->reqBuf.memory = V4L2_MEMORY_DMABUF;
@@ -314,23 +321,23 @@ int HinDevImpl::start_device()
             return ret;
         }
 
-        ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->handle_t[i]);
+        ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
         if (ret != 0) {
             ALOGE("mSidebandWindow->allocateBuffer failed !!!");
             return ret;
         }
-        mHinNodeInfo->bufferArray[i].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->handle_t[i]);
-        mHinNodeInfo->bufferArray[i].length = mSidebandWindow->getBufferLength(mHinNodeInfo->handle_t[i]);
-        mBufferHandleMap.insert(std::make_pair(mHinNodeInfo->bufferArray[i].m.fd, mHinNodeInfo->handle_t[i]));
+        mHinNodeInfo->bufferArray[i].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
+        mHinNodeInfo->bufferArray[i].length = mSidebandWindow->getBufferLength(mHinNodeInfo->buffer_handle_poll[i]);
+        mBufferHandleMap.insert(std::make_pair(mHinNodeInfo->bufferArray[i].m.fd, mHinNodeInfo->buffer_handle_poll[i]));
     }
     ALOGD("[%s %d] VIDIOC_QUERYBUF successful", __FUNCTION__, __LINE__);
 
     for (int i = 0; i < mBufferCount; i++) {
-        ALOGD("bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
-        ALOGD("bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
-        ALOGD("bufferArray memory = %d", mHinNodeInfo->bufferArray[i].memory);
-        ALOGD("bufferArray m.fd = %d", mHinNodeInfo->bufferArray[i].m.fd);
-        ALOGD("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
+        ALOGV("bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
+        ALOGV("bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
+        ALOGV("bufferArray memory = %d", mHinNodeInfo->bufferArray[i].memory);
+        ALOGV("bufferArray m.fd = %d", mHinNodeInfo->bufferArray[i].m.fd);
+        ALOGV("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[i]);
         if (ret < 0) {
             ALOGE("VIDIOC_QBUF Failed, error: %s", strerror(errno));
@@ -339,13 +346,13 @@ int HinDevImpl::start_device()
     }
     enum v4l2_buf_type bufType;
     bufType = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    ret = ioctl (mHinDevHandle, VIDIOC_STREAMON, &bufType);
+    ret = ioctl(mHinDevHandle, VIDIOC_STREAMON, &bufType);
     if (ret < 0) {
         ALOGE("VIDIOC_STREAMON Failed, error: %s", strerror(errno));
         return -1;
     }
 
-    ALOGD("[%s %d] VIDIOC_STREAMON:%x", __FUNCTION__, __LINE__, ret);
+    ALOGD("[%s %d] VIDIOC_STREAMON return=:%d", __FUNCTION__, __LINE__, ret);
     return ret;
 }
 
@@ -365,9 +372,10 @@ int HinDevImpl::stop_device()
 int HinDevImpl::cacheToDisplay() {
     int ret = -1;
 
-    mHinNodeInfo->queueBuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    mHinNodeInfo->queueBuf.memory = V4L2_MEMORY_DMABUF;
-    ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->queueBuf);
+    memset(&mHinNodeInfo->onceBuff,0,sizeof(v4l2_buffer));
+    mHinNodeInfo->onceBuff.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    mHinNodeInfo->onceBuff.memory = V4L2_MEMORY_DMABUF;
+    ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->onceBuff);
     if (ret < 0) {
         ALOGE("VIDIOC_DQBUF Failed, error: %s", strerror(errno));
         if (errno == EAGAIN) {
@@ -377,33 +385,36 @@ int HinDevImpl::cacheToDisplay() {
         }
     }
 
-    ALOGD("makeDisplayCache -> VIDIOC_DQBUF queueBuf.index=%d", mHinNodeInfo->queueBuf.index);
-    ALOGD("makeDisplayCache -> VIDIOC_DQBUF queueBuf.m.fd=%d", mHinNodeInfo->queueBuf.m.fd);
-    ALOGD("makeDisplayCache -> VIDIOC_DQBUF queueBuf.tv_sec=%ld", mHinNodeInfo->queueBuf.timestamp.tv_sec);
-    ALOGD("makeDisplayCache -> VIDIOC_DQBUF queueBuf.tv_usec=%ld", mHinNodeInfo->queueBuf.timestamp.tv_usec);
+    ALOGD("makeDisplayCache -> VIDIOC_DQBUF onceBuff.index=%d", mHinNodeInfo->onceBuff.index);
+    ALOGD("makeDisplayCache -> VIDIOC_DQBUF onceBuff.m.fd=%d", mHinNodeInfo->onceBuff.m.fd);
+    ALOGD("makeDisplayCache -> VIDIOC_DQBUF onceBuff.tv_sec=%ld", mHinNodeInfo->onceBuff.timestamp.tv_sec);
+    ALOGD("makeDisplayCache -> VIDIOC_DQBUF onceBuff.tv_usec=%ld", mHinNodeInfo->onceBuff.timestamp.tv_usec);
 
     std::map<int, buffer_handle_t>::iterator it;
     for (it=mBufferHandleMap.begin(); it!= mBufferHandleMap.end(); ++it) {
         int tmpHandleId = it->first;
         buffer_handle_t tmpHandle_t = it->second;
-        if (tmpHandleId == mHinNodeInfo->queueBuf.m.fd) {
+        if (tmpHandleId == mHinNodeInfo->onceBuff.m.fd) {
             mSidebandWindow->remainBuffer(tmpHandle_t);
-            mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->queueBuf.index;
+            mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->onceBuff.index;
             mHinNodeInfo->currBufferHandleFd = tmpHandleId;
+            ALOGD("after first dqbuf, the bufferArray index is %d", mHinNodeInfo->onceBuff.index);
             break;
         }
     }
 
-    memset(&mHinNodeInfo->queueBuf,0,sizeof(v4l2_buffer));
-    mHinNodeInfo->queueBuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    mHinNodeInfo->queueBuf.memory = V4L2_MEMORY_DMABUF;
-    mHinNodeInfo->queueBuf.m.fd = mHinNodeInfo->currBufferHandleFd;
-    mHinNodeInfo->queueBuf.length = mSidebandWindow->getBufferLength(mHinNodeInfo->handle_t[mHinNodeInfo->currBufferHandleIndex]);
+    memset(&mHinNodeInfo->onceBuff,0,sizeof(v4l2_buffer));
+    mHinNodeInfo->onceBuff.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    mHinNodeInfo->onceBuff.memory = V4L2_MEMORY_DMABUF;
+    mHinNodeInfo->onceBuff.m.fd = mHinNodeInfo->currBufferHandleFd;
+    mHinNodeInfo->onceBuff.length = mSidebandWindow->getBufferLength(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
 
-    ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->queueBuf);
+    ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->onceBuff);
     if (ret < 0) {
         ALOGE("VIDIOC_QBUF Failed, error: %s", strerror(errno));
         return -1;
+    } else {
+        ALOGD("%s qbuf success.", __FUNCTION__);
     }
     return ret;
 }
@@ -423,10 +434,10 @@ int HinDevImpl::start()
         return ret;
     }
 
-    ret = cacheToDisplay();
-    if (ret != 0) {
-        ALOGE("cacheToDisplay Buffer failed");
-    }
+    // ret = cacheToDisplay();
+    // if (ret != 0) {
+    //     ALOGE("cacheToDisplay Buffer failed");
+    // }
 
     ALOGD("Create Work Thread");
     mWorkThread = new WorkThread(this);
@@ -515,7 +526,7 @@ int HinDevImpl::set_mode(int displayMode)
 
 int HinDevImpl::set_format(int width, int height, int color_format)
 {
-    ALOGD("[%s %d]", __FUNCTION__, __LINE__);
+    ALOGD("[%s %d] width=%d, height=%d, color_format=%d", __FUNCTION__, __LINE__, width, height, color_format);
     Mutex::Autolock autoLock(mLock);
     if (mOpen == true)
         return NO_ERROR;
@@ -565,7 +576,7 @@ int HinDevImpl::set_rotation(int degree)
 
 int HinDevImpl::set_crop(int x, int y, int width, int height)
 {
-    ALOGD("[%s %d]", __FUNCTION__, __LINE__);
+    ALOGD("[%s %d] crop [%d - %d -%d - %d]", __FUNCTION__, __LINE__, x, y, width, height);
     mSidebandWindow->setCrop(x, y, width, height);
     return NO_ERROR;
 }
@@ -663,13 +674,15 @@ int HinDevImpl::set_screen_mode(int mode)
 
 int HinDevImpl::aquire_buffer()
 {
-    ALOGE("%s %d", __FUNCTION__, __LINE__);
+    ALOGV("%s %d", __FUNCTION__, __LINE__);
     int ret = -1;
     Mutex::Autolock autoLock(mLock);
-    mHinNodeInfo->queueBuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    mHinNodeInfo->queueBuf.memory = V4L2_MEMORY_DMABUF;
 
-    ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->queueBuf);
+    memset(&mHinNodeInfo->onceBuff, 0, sizeof(v4l2_buffer));
+    mHinNodeInfo->onceBuff.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    mHinNodeInfo->onceBuff.memory = V4L2_MEMORY_DMABUF;
+
+    ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->onceBuff);
     if (ret < 0) {
         ALOGE("VIDIOC_DQBUF Failed, error: %s", strerror(errno));
         if (errno == EAGAIN) {
@@ -678,46 +691,54 @@ int HinDevImpl::aquire_buffer()
             return -1;
         }
     }
-
-    ALOGD("VIDIOC_DQBUF queueBuf.index=%d", mHinNodeInfo->queueBuf.index);
-    ALOGD("VIDIOC_DQBUF queueBuf.m.fd=%d", mHinNodeInfo->queueBuf.m.fd);
-    ALOGD("VIDIOC_DQBUF queueBuf.tv_sec=%ld", mHinNodeInfo->queueBuf.timestamp.tv_sec);
-    ALOGD("VIDIOC_DQBUF queueBuf.tv_usec=%ld", mHinNodeInfo->queueBuf.timestamp.tv_usec);
+    ALOGD("%s VIDIOC_DQBUF onceBuff.index=%d", __FUNCTION__, mHinNodeInfo->onceBuff.index);
+    ALOGD("%s VIDIOC_DQBUF onceBuff.m.fd=%d", __FUNCTION__, mHinNodeInfo->onceBuff.m.fd);
+    ALOGV("%s VIDIOC_DQBUF onceBuff.tv_sec=%ld", __FUNCTION__, mHinNodeInfo->onceBuff.timestamp.tv_sec);
+    ALOGV("%s VIDIOC_DQBUF onceBuff.tv_usec=%ld", __FUNCTION__, mHinNodeInfo->onceBuff.timestamp.tv_usec);
 
     std::map<int, buffer_handle_t>::iterator it;
     for (it=mBufferHandleMap.begin(); it!= mBufferHandleMap.end(); ++it) {
         int tmpHandleId = it->first;
         buffer_handle_t tmpHandle_t = it->second;
-        if (tmpHandleId == mHinNodeInfo->queueBuf.m.fd) {
+        if (tmpHandleId == mHinNodeInfo->onceBuff.m.fd) {
+            ALOGD("aquire_buffer-------> curr buffer_handle_t = %p", tmpHandle_t);
             mSidebandWindow->queueBuffer(tmpHandle_t);
-            mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->queueBuf.index;
+            mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->onceBuff.index;
             mHinNodeInfo->currBufferHandleFd = tmpHandleId;
+            ALOGD("aquire_buffer-------> curr buffer_handle_t = %p", mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
+
             break;
         }
     }
 
-    ALOGE("%s finish %d ", __FUNCTION__, __LINE__);
+    ALOGV("%s finish %d ", __FUNCTION__, __LINE__);
     return ret;
 }
 
 int HinDevImpl::release_buffer()
 {
-    ALOGD("%s %d", __FUNCTION__, __LINE__);
-    v4l2_buffer qBuf;
+    ALOGV("%s %d", __FUNCTION__, __LINE__);
     int ret = -1;
 
     Mutex::Autolock autoLock(mLock);
-    memset(&qBuf,0,sizeof(v4l2_buffer));
+    ALOGD("%s in: VIDIOC_QBUF the bufferArray index is %d", __FUNCTION__, mHinNodeInfo->currBufferHandleIndex);
+    ALOGD("%s in: VIDIOC_QBUF currBuff.fd=%d", __FUNCTION__, mHinNodeInfo->currBufferHandleFd);
+    ALOGD("release_buffer-------> curr buffer_handle_t = %p", mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
+
     if (mHinNodeInfo->currBufferHandleIndex != -1) {
-        mSidebandWindow->dequeueBuffer(&(mHinNodeInfo->handle_t[mHinNodeInfo->currBufferHandleIndex]));
+        mSidebandWindow->dequeueBuffer(&(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]));
     } else {
         return ret;
     }
+    ALOGD("release_buffer-------> after dequeueBuffer buffer_handle_t = %p", mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
     
+    v4l2_buffer qBuf;
+    memset(&qBuf,0,sizeof(v4l2_buffer));
+    qBuf.index = mHinNodeInfo->currBufferHandleIndex;
     qBuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     qBuf.memory = V4L2_MEMORY_DMABUF;
     qBuf.m.fd = mHinNodeInfo->currBufferHandleFd;
-    qBuf.length = mSidebandWindow->getBufferLength(mHinNodeInfo->handle_t[mHinNodeInfo->currBufferHandleIndex]);
+    qBuf.length = mSidebandWindow->getBufferLength(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
 
     ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &qBuf);
     if (ret != 0) {
@@ -726,20 +747,48 @@ int HinDevImpl::release_buffer()
     return ret;
 }
 
+bool first_flag = false;
+int frameCount = 0;
 int HinDevImpl::workThread()
 {
     ALOGD("HinDevImpl::workThread()");
     int ret;
+    if (!first_flag) {
+        usleep(10*1000*1000);
+        first_flag = true;
+    }
     if (mState == START) {
         ret = aquire_buffer();
         if (ret == -1) {
             return BAD_VALUE;
         }
-        usleep(1000);
+#if 0
+//#ifdef DUMP_YUV
+        
+        if (frameCount < 10) {
+            FILE* fp =NULL;
+            char filename[128];
+            filename[0] = 0x00;
+            sprintf(filename, "/data/local/camera_dump_h264_%dx%d.h264",
+                    2560, 1440);
+            fp = fopen(filename, "ab+");
+            if (fp != NULL) {
+                fwrite((char*)inData,1,inDataSize,fp);
+                fclose(fp);
+                ALOGI("Write success h264 data to %s",filename);
+            } else {
+                ALOGE("Create %s failed(%d, %s)",filename,fp, strerror(errno));
+            }
+            frameCount++;
+        }
+#endif
+
+        usleep(100*1000);
         ret = release_buffer();
         if (ret == -1) {
             return BAD_VALUE;
         }
+        usleep(50*1000);
 
     }
     return NO_ERROR;
