@@ -326,4 +326,33 @@ int RTSidebandWindow::getBufferLength(buffer_handle_t buffer) {
     return mBuffMgr->GetHandleBufferSize(buffer);
 }
 
+int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName) {
+    int ret = -1;
+    if (!handle || !fileName) {
+        ALOGE("%s param buffer is NULL.", __FUNCTION__);
+        return ret;
+    }
+    FILE* fp =NULL;
+    void *dataPtr = NULL;
+    int dataSize = 0;
+    fp = fopen(fileName, "ab+");
+    if (fp != NULL) {
+        struct android_ycbcr ycbrData;
+        int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+        mBuffMgr->LockYCbCr(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &ycbrData);
+        dataPtr = ycbrData.y;
+        for (int i = 0; i < mBuffMgr->GetNumPlanes(handle); i++) {
+            dataSize += mBuffMgr->GetPlaneSize(handle, i);
+        }
+        fwrite(dataPtr, dataSize, 1, fp);
+        fclose(fp);
+        mBuffMgr->Unlock(handle);
+        ALOGI("Write success h264 data to %s",fileName);
+        ret = 0;
+    } else {
+        ALOGE("Create %s failed(%p, %s)", fileName, fp, strerror(errno));
+    }
+    return ret;
+}
+
 }

@@ -356,6 +356,8 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
 
     common::TvInputBufferManager* tvBufferMgr = common::TvInputBufferManager::GetInstance();
 
+    void *data;
+
     hwc_drm_bo_t bo;
     int fd = 0;
     int ret = 0;
@@ -370,14 +372,15 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
     if (it == mFbidMap.end()) {
         memset(&bo, 0, sizeof(hwc_drm_bo_t));
         uint32_t gem_handle;
-        //size_t plane_size;
+        size_t plane_size;
         fd = (int)tvBufferMgr->GetHandleFd(handle);
         ret = drmPrimeFDToHandle(mDrmFd, fd, &gem_handle);
-        src_w = tvBufferMgr->get_width(handle);
-        src_h = tvBufferMgr->get_height(handle);
-        src_format = tvBufferMgr->GetV4L2PixelFormat(handle);
-        //plane_size = tvBufferMgr->GetNumPlanes(handle);
-        src_stride = (int)tvBufferMgr->GetPlaneStride(handle, tvBufferMgr->GetNumPlanes(handle));
+        src_w = tvBufferMgr->GetWidth(handle);
+        src_h = tvBufferMgr->GetHeight(handle);
+        src_format = tvBufferMgr->GetHalPixelFormat(handle);
+        plane_size = tvBufferMgr->GetNumPlanes(handle);
+        ALOGV("plane_size = %zu", plane_size);
+        src_stride = (int)tvBufferMgr->GetPlaneStride(handle, 0);
 
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_WIDTH, handle, &src_w);
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_HEIGHT, handle, &src_h);
@@ -385,7 +388,7 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_BYTE_STRIDE, handle, &src_stride);
         bo.width = src_w;
         bo.height = src_h;
-        bo.format = ConvertHalFormatToDrm(src_format);
+        bo.format = ConvertHalFormatToDrm(HAL_PIXEL_FORMAT_YCrCb_NV12);
         bo.pitches[0] = src_stride;
         bo.gem_handles[0] = gem_handle;
         bo.offsets[0] = 0;
@@ -399,9 +402,10 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.width = src_w / 1.25;
             bo.width = ALIGN_DOWN(bo.width, 2);
         }
-        ALOGD("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
+        ALOGV("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
         ret = drmModeAddFB2(mDrmFd, bo.width, bo.height, bo.format, bo.gem_handles,\
                      bo.pitches, bo.offsets, &bo.fb_id, 0);
+        ALOGV("drmModeAddFB2 ret = %s", strerror(ret));
         fbid = bo.fb_id;
         mFbidMap.insert(std::make_pair(fd, fbid));
     } else {
@@ -479,12 +483,12 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     src_w = width;
     src_h = height;
     //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
-    ALOGD("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
-    ALOGD("\n mDrmFd=%d \n", mDrmFd);
-    ALOGD("\n plane_id=%d \n", plane_id);
-    ALOGD("\n output->crtc->crtc_id=%d \n", output->crtc->crtc_id);
-    ALOGD("\n fb_id=%d \n", fb_id);
-    ALOGD("\n flags=%d \n", flags);
+    ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
+    ALOGV("\n mDrmFd=%d \n", mDrmFd);
+    ALOGV("\n plane_id=%d \n", plane_id);
+    ALOGV("\n output->crtc->crtc_id=%d \n", output->crtc->crtc_id);
+    ALOGV("\n fb_id=%d \n", fb_id);
+    ALOGV("\n flags=%d \n", flags);
     if (plane_id > 0) {
         ret = drmModeSetPlane(mDrmFd, plane_id,
                           output->crtc->crtc_id, fb_id, flags,

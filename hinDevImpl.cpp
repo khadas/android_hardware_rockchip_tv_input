@@ -27,7 +27,7 @@
 #include <ui/GraphicBuffer.h>
 #include <linux/videodev2.h>
 
-//#define DUMP_YUV
+#define DUMP_YUV
 
 #define V4L2_ROTATE_ID 0x980922
 
@@ -337,7 +337,7 @@ int HinDevImpl::start_device()
         ALOGV("bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
         ALOGV("bufferArray memory = %d", mHinNodeInfo->bufferArray[i].memory);
         ALOGV("bufferArray m.fd = %d", mHinNodeInfo->bufferArray[i].m.fd);
-        ALOGV("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
+        ALOGD("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[i]);
         if (ret < 0) {
             ALOGE("VIDIOC_QBUF Failed, error: %s", strerror(errno));
@@ -724,6 +724,7 @@ int HinDevImpl::release_buffer()
     ALOGD("%s in: VIDIOC_QBUF the bufferArray index is %d", __FUNCTION__, mHinNodeInfo->currBufferHandleIndex);
     ALOGD("%s in: VIDIOC_QBUF currBuff.fd=%d", __FUNCTION__, mHinNodeInfo->currBufferHandleFd);
     ALOGD("release_buffer-------> curr buffer_handle_t = %p", mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
+    ALOGD("release_buffer-------> curr buffer_handle_t size = %d", mSidebandWindow->getBufferLength(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]));
 
     if (mHinNodeInfo->currBufferHandleIndex != -1) {
         mSidebandWindow->dequeueBuffer(&(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]));
@@ -731,7 +732,8 @@ int HinDevImpl::release_buffer()
         return ret;
     }
     ALOGD("release_buffer-------> after dequeueBuffer buffer_handle_t = %p", mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]);
-    
+    ALOGD("release_buffer-------> after buffer_handle_t size = %d", mSidebandWindow->getBufferLength(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex]));
+
     v4l2_buffer qBuf;
     memset(&qBuf,0,sizeof(v4l2_buffer));
     qBuf.index = mHinNodeInfo->currBufferHandleIndex;
@@ -762,25 +764,15 @@ int HinDevImpl::workThread()
         if (ret == -1) {
             return BAD_VALUE;
         }
-#if 0
-//#ifdef DUMP_YUV
-        
-        if (frameCount < 10) {
-            FILE* fp =NULL;
-            char filename[128];
-            filename[0] = 0x00;
-            sprintf(filename, "/data/local/camera_dump_h264_%dx%d.h264",
-                    2560, 1440);
-            fp = fopen(filename, "ab+");
-            if (fp != NULL) {
-                fwrite((char*)inData,1,inDataSize,fp);
-                fclose(fp);
-                ALOGI("Write success h264 data to %s",filename);
-            } else {
-                ALOGE("Create %s failed(%d, %s)",filename,fp, strerror(errno));
-            }
-            frameCount++;
-        }
+
+#ifdef DUMP_YUV
+    if (frameCount < 20) {
+        char filename[128];
+        filename[0] = 0x00;
+        sprintf(filename, "/data/system/camera_dump_h264_%dx%d_%d.jpeg", mFrameWidth, mFrameHeight, frameCount);
+        mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], filename);
+        frameCount++;
+    }
 #endif
 
         usleep(100*1000);

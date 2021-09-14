@@ -162,9 +162,9 @@ TvInputBufferManager* TvInputBufferManager::GetInstance() {
     return &instance;
 }
 
-//static
+// static
 int TvInputBufferManagerImpl::GetHalPixelFormat(buffer_handle_t buffer) {
-    ALOGD("GetHalPixelFormat %p", buffer);
+    ALOGV("GetHalPixelFormat %p", buffer);
     auto &mapper = get_mapperservice();
     // android::PixelFormat format;    // *format_requested
     PixelFormat format;    // *format_requested
@@ -181,8 +181,8 @@ int TvInputBufferManagerImpl::GetHalPixelFormat(buffer_handle_t buffer) {
 
 // static
 uint32_t TvInputBufferManager::GetNumPlanes(buffer_handle_t buffer) {
-    ALOGD("GetNumPlanes %p", buffer);
-    int hal_pixel_format = TvInputBufferManagerImpl::GetHalPixelFormat(buffer);
+    ALOGV("GetNumPlanes %p", buffer);
+    int hal_pixel_format = GetInstance()->GetHalPixelFormat(buffer);
     /* only support one physical plane now */
     switch (hal_pixel_format) {
     case HAL_PIXEL_FORMAT_RGBA_8888:
@@ -207,8 +207,9 @@ uint32_t TvInputBufferManager::GetNumPlanes(buffer_handle_t buffer) {
 
 // static
 uint32_t TvInputBufferManager::GetV4L2PixelFormat(buffer_handle_t buffer) {
-    ALOGD("GetV4L2PixelFormat %p", buffer);
-    int hal_pixel_format = TvInputBufferManagerImpl::GetHalPixelFormat(buffer);
+    ALOGV("GetV4L2PixelFormat %p", buffer);
+    int hal_pixel_format = GetInstance()->GetHalPixelFormat(buffer);
+    ALOGV("hal_pixel_format %d", hal_pixel_format);
 
     switch (hal_pixel_format) {
     case HAL_PIXEL_FORMAT_RGBA_8888:
@@ -238,7 +239,7 @@ uint32_t TvInputBufferManager::GetV4L2PixelFormat(buffer_handle_t buffer) {
     return 0;
 }
 
-int TvInputBufferManagerImpl::get_width(buffer_handle_t handle)
+int TvInputBufferManagerImpl::GetWidth(buffer_handle_t handle)
 {
     auto &mapper = get_mapperservice();
     uint64_t width;
@@ -252,7 +253,7 @@ int TvInputBufferManagerImpl::get_width(buffer_handle_t handle)
     return (int)width;
 }
 
-int TvInputBufferManagerImpl::get_height(buffer_handle_t handle)
+int TvInputBufferManagerImpl::GetHeight(buffer_handle_t handle)
 {
     auto &mapper = get_mapperservice();
     uint64_t height;
@@ -267,7 +268,7 @@ int TvInputBufferManagerImpl::get_height(buffer_handle_t handle)
 }
 
 int TvInputBufferManagerImpl::GetHandleBufferSize(buffer_handle_t handle) {
-    ALOGD("GetHandleBufferSize handle:%p", handle);
+    ALOGV("GetHandleBufferSize handle:%p", handle);
 
     auto &mapper = get_mapperservice();
     uint64_t bufferSize;
@@ -285,7 +286,7 @@ int TvInputBufferManagerImpl::GetHandleBufferSize(buffer_handle_t handle) {
 // static
 size_t TvInputBufferManager::GetPlaneStride(buffer_handle_t buffer,
                                            size_t plane) {
-    ALOGD("GetPlaneStride %p plane:%zu", buffer, plane);
+    ALOGV("GetPlaneStride %p plane:%zu", buffer, plane);
     if (plane >= GetNumPlanes(buffer)) {
         ALOGE(" %s Invalid plane: : %zu", __FUNCTION__, plane);
         return 0;
@@ -295,7 +296,7 @@ size_t TvInputBufferManager::GetPlaneStride(buffer_handle_t buffer,
     std::vector<PlaneLayout> layouts;
     int format_requested;
 
-    format_requested = TvInputBufferManagerImpl::GetHalPixelFormat(buffer);
+    format_requested = GetInstance()->GetHalPixelFormat(buffer);
 
     /* 若 'format_requested' "不是" HAL_PIXEL_FORMAT_YCrCb_NV12_10, 则 ... */
     if ( format_requested != HAL_PIXEL_FORMAT_YCrCb_NV12_10 )
@@ -323,7 +324,7 @@ size_t TvInputBufferManager::GetPlaneStride(buffer_handle_t buffer,
         uint64_t width;
         int byte_stride;
 
-        width = GetInstance()->get_width(buffer);
+        width = GetInstance()->GetWidth(buffer);
 
         // .trick : from CSY : 分配 rk_video_decoder 输出 buffers 时, 要求的 byte_stride of buffer in NV12_10, 已经通过 width 传入.
         //          原理上, NV12_10 的 pixel_stride 和 byte_stride 是不同的, 但是这里保留 之前 rk_drm_gralloc 的赋值方式.
@@ -335,7 +336,7 @@ size_t TvInputBufferManager::GetPlaneStride(buffer_handle_t buffer,
 
 // static
 size_t TvInputBufferManager::GetPlaneSize(buffer_handle_t buffer, size_t plane) {
-    ALOGD("GetPlaneSize %p plane:%zu", buffer, plane);
+    ALOGV("GetPlaneSize %p plane:%zu", buffer, plane);
     if (plane >= GetNumPlanes(buffer)) {
         ALOGE(" %s Invalid plane: %zu", __FUNCTION__, plane);
         return 0;
@@ -345,7 +346,7 @@ size_t TvInputBufferManager::GetPlaneSize(buffer_handle_t buffer, size_t plane) 
     std::vector<PlaneLayout> layouts;
     int format_requested;
 
-    format_requested = TvInputBufferManagerImpl::GetHalPixelFormat(buffer);
+    format_requested = GetInstance()->GetHalPixelFormat(buffer);
 
     /* 若 'format_requested' "不是" HAL_PIXEL_FORMAT_YCrCb_NV12_10, 则 ... */
     if ( format_requested != HAL_PIXEL_FORMAT_YCrCb_NV12_10 )
@@ -373,7 +374,7 @@ size_t TvInputBufferManager::GetPlaneSize(buffer_handle_t buffer, size_t plane) 
         uint64_t width;
         int byte_stride;
 
-        width = GetInstance()->get_width(buffer);
+        width = GetInstance()->GetWidth(buffer);
 
         // .trick : from CSY : 分配 rk_video_decoder 输出 buffers 时, 要求的 byte_stride of buffer in NV12_10, 已经通过 width 传入.
         //          原理上, NV12_10 的 pixel_stride 和 byte_stride 是不同的, 但是这里保留 之前 rk_drm_gralloc 的赋值方式.
@@ -676,7 +677,7 @@ int TvInputBufferManagerImpl::Lock(buffer_handle_t bufferHandle,
                                   uint32_t width,
                                   uint32_t height,
                                   void** out_addr) {
-    ALOGD("lock buffer:%p   %d, %d, %d, %d, %d", bufferHandle, x, y,width, height, flags);
+    ALOGV("lock buffer:%p   %d, %d, %d, %d, %d", bufferHandle, x, y,width, height, flags);
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
@@ -689,7 +690,7 @@ int TvInputBufferManagerImpl::Lock(buffer_handle_t bufferHandle,
     if (!num_planes) {
         return -EINVAL;
     }
-    if (num_planes > 1) {
+    if (num_planes > 2) {
         ALOGE("Lock called on multi-planar buffer %p", bufferHandle);
         return -EINVAL;
     }
@@ -736,7 +737,7 @@ int TvInputBufferManagerImpl::LockYCbCr(buffer_handle_t buffer,
                                        uint32_t width,
                                        uint32_t height,
                                        struct android_ycbcr* out_ycbcr) {
-    ALOGD("LockYCbCr");
+    ALOGV("LockYCbCr");
 
     auto context_it = buffer_context_.find(buffer);
     if (context_it == buffer_context_.end()) {
@@ -853,7 +854,7 @@ int TvInputBufferManagerImpl::LockYCbCr(buffer_handle_t buffer,
         *out_ycbcr = ycbcr;
 
     }
-    ALOGD("lock ycbcr ok");
+    ALOGV("lock ycbcr ok");
 
     return 0;
 }

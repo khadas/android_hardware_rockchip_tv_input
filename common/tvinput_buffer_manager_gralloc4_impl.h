@@ -86,11 +86,10 @@ public:
     int GetHandleFd(buffer_handle_t buffer) final;
     int GetHandleBufferSize(buffer_handle_t handle) final;  
     int GetBufferId(buffer_handle_t buffer) final;
-    int get_width(buffer_handle_t handle) final;
-    int get_height(buffer_handle_t handle) final;
+    int GetWidth(buffer_handle_t handle) final;
+    int GetHeight(buffer_handle_t handle) final;
+    int GetHalPixelFormat(buffer_handle_t buffer) final;
 
-private:
-    static int GetHalPixelFormat(buffer_handle_t buffer);
 private:
     friend class TvInputBufferManager;
 

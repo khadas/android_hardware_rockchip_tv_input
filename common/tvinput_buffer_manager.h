@@ -225,8 +225,9 @@ class EXPORTED TvInputBufferManager {
   //    fd
   virtual int GetHandleFd(buffer_handle_t buffer) = 0;
   virtual int GetBufferId(buffer_handle_t buffer) = 0;
-  virtual int get_width(buffer_handle_t handle) = 0;
-  virtual int get_height(buffer_handle_t handle) = 0;
+  virtual int GetWidth(buffer_handle_t handle) = 0;
+  virtual int GetHeight(buffer_handle_t handle) = 0;
+  virtual int GetHalPixelFormat(buffer_handle_t buffer) = 0;
 
   // This method is used to get handle buffer size.
   //
