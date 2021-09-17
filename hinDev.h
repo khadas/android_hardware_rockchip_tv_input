@@ -35,11 +35,6 @@
 
 using namespace android;
 
-#define HIN_DEV_NODE_MAIN "/dev/video0"
-#define HIN_DEV_NODE_OTHERS "/dev/video10"
-
-//#define NB_BUFFER 6
-
 typedef struct source_buffer_info {
     buffer_handle_t source_buffer_handle_t;
     int    reserved_data;

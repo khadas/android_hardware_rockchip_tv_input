@@ -166,38 +166,24 @@ static int  getNativeWindowFormat(int format)
     return nativeFormat;
 }
 
-/*
-static ANativeWindowBuffer* handle_to_buffer(buffer_handle_t *handle)
-{
-    return container_of(handle, ANativeWindowBuffer, handle);
-}
-*/
 HinDevImpl::HinDevImpl()
                   : mHinDevHandle(-1),
                     mHinNodeInfo(NULL)
 {
-    ALOGD("%s %d", __FUNCTION__, __LINE__);
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     property_get("DEBUG_LEVEL_PROPNAME", prop_value, "0");
     mDebugLevel = (int)atoi(prop_value);
 }
 
 int HinDevImpl::init(int id) {
-    ALOGD("%s %d device_id=%d", __FUNCTION__, __LINE__, id);
-    if (1) {
-        if (access(HIN_DEV_NODE_MAIN, F_OK|R_OK) != 0) {
-            DEBUG_PRINT(3, "%s access failed!", HIN_DEV_NODE_MAIN);
-            return -1;
-        } else {
-            DEBUG_PRINT(3, "%s access successful!", HIN_DEV_NODE_MAIN);
-        }
+    if (!access(HIN_DEV_NODE_MAIN, F_OK|R_OK)) {
         mHinDevHandle = open(HIN_DEV_NODE_MAIN, O_RDWR);
         if (mHinDevHandle < 0)
         {
             DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, mHinDevHandle,strerror(errno));
             return -1;
         } else {
-            ALOGD("%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_MAIN);
+            DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_MAIN);
         }
     } else {
         if (access(HIN_DEV_NODE_OTHERS, F_OK|R_OK) != 0) {
@@ -210,7 +196,7 @@ int HinDevImpl::init(int id) {
             DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, mHinDevHandle,strerror(errno));
             return -1;
         } else {
-            ALOGD("%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_OTHERS);
+            DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_OTHERS);
         }
     }
 
@@ -286,18 +272,18 @@ int HinDevImpl::start_device()
 {
     int ret = -1;
 
-    ALOGD("[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
+    DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
 
     ret = ioctl(mHinDevHandle, VIDIOC_QUERYCAP, &mHinNodeInfo->cap);
     if (ret < 0) {
         DEBUG_PRINT(3, "VIDIOC_QUERYCAP Failed, error: %s", strerror(errno));
         return ret;
     }
-    ALOGD("VIDIOC_QUERYCAP driver=%s", mHinNodeInfo->cap.driver);
-    ALOGD("VIDIOC_QUERYCAP card=%s", mHinNodeInfo->cap.card);
-    ALOGD("VIDIOC_QUERYCAP version=%d", mHinNodeInfo->cap.version);
-    ALOGD("VIDIOC_QUERYCAP capabilities=0x%08x", mHinNodeInfo->cap.capabilities);
-    ALOGD("VIDIOC_QUERYCAP device_caps=0x%08x", mHinNodeInfo->cap.device_caps);
+    DEBUG_PRINT(1, "VIDIOC_QUERYCAP driver=%s", mHinNodeInfo->cap.driver);
+    DEBUG_PRINT(1, "VIDIOC_QUERYCAP card=%s", mHinNodeInfo->cap.card);
+    DEBUG_PRINT(1, "VIDIOC_QUERYCAP version=%d", mHinNodeInfo->cap.version);
+    DEBUG_PRINT(1, "VIDIOC_QUERYCAP capabilities=0x%08x", mHinNodeInfo->cap.capabilities);
+    DEBUG_PRINT(1, "VIDIOC_QUERYCAP device_caps=0x%08x", mHinNodeInfo->cap.device_caps);
 
     mHinNodeInfo->reqBuf.type = TVHAL_V4L2_BUF_TYPE;
     mHinNodeInfo->reqBuf.memory = TVHAL_V4L2_BUF_MEMORY;
@@ -323,7 +309,6 @@ int HinDevImpl::start_device()
             mHinNodeInfo->bufferArray[i].length = PLANES_NUM;
         }
 
-        ALOGD("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
         ret = ioctl(mHinDevHandle, VIDIOC_QUERYBUF, &mHinNodeInfo->bufferArray[i]);
         if (ret < 0) {
             DEBUG_PRINT(3, "VIDIOC_QUERYBUF Failed, error: %s", strerror(errno));
@@ -347,11 +332,11 @@ int HinDevImpl::start_device()
     ALOGD("[%s %d] VIDIOC_QUERYBUF successful", __FUNCTION__, __LINE__);
 
     for (int i = 0; i < mBufferCount; i++) {
-        ALOGD("bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
-        ALOGD("bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
-        ALOGD("bufferArray memory = %d", mHinNodeInfo->bufferArray[i].memory);
-        ALOGD("bufferArray m.fd = %d", mHinNodeInfo->bufferArray[i].m.planes[0].m.fd);
-        ALOGD("bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
+        DEBUG_PRINT(mDebugLevel, "bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
+        DEBUG_PRINT(mDebugLevel, "bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
+        DEBUG_PRINT(mDebugLevel, "bufferArray memory = %d", mHinNodeInfo->bufferArray[i].memory);
+        DEBUG_PRINT(mDebugLevel, "bufferArray m.fd = %d", mHinNodeInfo->bufferArray[i].m.planes[0].m.fd);
+        DEBUG_PRINT(mDebugLevel, "bufferArray length = %d", mHinNodeInfo->bufferArray[i].length);
 
         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[i]);
         if (ret < 0) {
@@ -516,10 +501,10 @@ int HinDevImpl::set_format(int width, int height, int color_format)
     if (ret < 0) {
         DEBUG_PRINT(3, "[%s %d] failed, VIDIOC_G_FMT %d, %s", __FUNCTION__, __LINE__, ret, strerror(ret));
     } else {
-        ALOGD("after %s get from v4l2 format.type = %d ", __FUNCTION__, format.type);
-        ALOGD("after %s get from v4l2 format.fmt.pix.width =%d", __FUNCTION__, format.fmt.pix.width);
-        ALOGD("after %s get from v4l2 format.fmt.pix.height =%d", __FUNCTION__, format.fmt.pix.height);
-        ALOGD("after %s get from v4l2 format.fmt.pix.pixelformat =%d", __FUNCTION__, format.fmt.pix.pixelformat);
+        DEBUG_PRINT(mDebugLevel, "after %s get from v4l2 format.type = %d ", __FUNCTION__, format.type);
+        DEBUG_PRINT(mDebugLevel, "after %s get from v4l2 format.fmt.pix.width =%d", __FUNCTION__, format.fmt.pix.width);
+        DEBUG_PRINT(mDebugLevel, "after %s get from v4l2 format.fmt.pix.height =%d", __FUNCTION__, format.fmt.pix.height);
+        DEBUG_PRINT(mDebugLevel, "after %s get from v4l2 format.fmt.pix.pixelformat =%d", __FUNCTION__, format.fmt.pix.pixelformat);
     }
     
     mSidebandWindow->setBufferGeometry(mFrameWidth, mFrameHeight, DEFAULT_TVHAL_STREAM_FORMAT);

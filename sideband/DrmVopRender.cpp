@@ -139,9 +139,12 @@ bool DrmVopRender::detect(int device)
 
         if (connector->connection != DRM_MODE_CONNECTED) {
             ALOGE("+++device %d is not connected", device);
-            drmModeFreeConnector(connector);
-            ret = true;
-            break;
+            if (i == resources->count_connectors -1) {
+                drmModeFreeConnector(connector);
+                ret = true;
+                break;
+            }
+            continue;
         }
 
         output->connector = connector;
@@ -242,10 +245,13 @@ bool DrmVopRender::detect(int device)
         break;
     }
 
-    output->props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
-    if (!output->props) {
-        ALOGE("Failed to found props crtc[%d] %s\n", output->crtc->crtc_id, strerror(errno));
+    if (output->crtc) {
+        output->props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+        if (!output->props) {
+            ALOGE("Failed to found props crtc[%d] %s\n", output->crtc->crtc_id, strerror(errno));
+        }
     }
+
     drmModeFreeResources(resources);
 
     return ret;
