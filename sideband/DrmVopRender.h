@@ -122,6 +122,7 @@ private:
     } mOutputs[OUTPUT_MAX];
 
     int mDrmFd;
+    int mSidebandPlaneId;
    // Mutex mLock;
     bool mInitialized;
     const gralloc_module_t *gralloc_;

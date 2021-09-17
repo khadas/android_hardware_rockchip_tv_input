@@ -175,6 +175,7 @@ int TvInputBufferManagerImpl::GetHalPixelFormat(buffer_handle_t buffer) {
         ALOGE("ailed to get pixel_format_requested. err : %d", err);
         return err;
     }
+    ALOGD("GetHalPixelFormat %d", (int)format);
 
     return (int)format;
 }
@@ -197,6 +198,7 @@ uint32_t TvInputBufferManager::GetNumPlanes(buffer_handle_t buffer) {
     case HAL_PIXEL_FORMAT_YCrCb_420_SP: // NV21
     case HAL_PIXEL_FORMAT_YCbCr_420_888:
     case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED: //NV12
+    case HAL_PIXEL_FORMAT_YCbCr_422_SP_10:
         return 2;
     default :
         return 1;
@@ -941,7 +943,6 @@ int TvInputBufferManagerImpl::FlushCache(buffer_handle_t buffer) {
 }
 
 int TvInputBufferManagerImpl::GetBufferId(buffer_handle_t buffer) {
-    ALOGD("GetBufferId buffer:%p", buffer);
     uint64_t buffer_id = -1;
 
     auto &mapper = get_mapperservice();
@@ -952,12 +953,11 @@ int TvInputBufferManagerImpl::GetBufferId(buffer_handle_t buffer) {
         ALOGE("Failed to get plane_fds. err : %d", err);
         return err;
     }
-
+    ALOGD("GetBufferId buffer:%p, fd=%d", buffer, (int32_t)buffer_id);
     return (int32_t)buffer_id;
 }
 
 int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
-    ALOGD("GetHandleFd buffer:%p", buffer);
     int fd = -1;
 
     auto &mapper = get_mapperservice();
@@ -972,6 +972,7 @@ int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
     assert (fds.size() > 0);
 
     fd = (int)(fds[0]);
+    ALOGV("GetHandleFd buffer:%p, fd = %d.", buffer, fd);
 
     return fd;
 }

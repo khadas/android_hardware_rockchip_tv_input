@@ -19,6 +19,7 @@
 #include <hardware/hardware.h>
 #include <hardware/tv_input.h>
 #include "hinDev.h"
+#include "Utils.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -27,9 +28,6 @@
 
 using namespace android;
 #define UNUSED(x) (void *)x
-
-#define DEFAULT_CAPTURE_WIDTH 2560
-#define DEFAULT_CAPTURE_HEIGHT 1440
 
 #ifndef container_of
 #define container_of(ptr, type, member) \
@@ -246,8 +244,8 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
             stream->sideband_stream_source_handle = native_handle_clone(priv->mDev->getSindebandBufferHandle());
 
-            priv->mDev->set_format(DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT, HAL_PIXEL_FORMAT_YCrCb_NV12);
-            priv->mDev->set_crop(0, 0, DEFAULT_CAPTURE_WIDTH, DEFAULT_CAPTURE_HEIGHT);
+            priv->mDev->set_format(DEFAULT_V4L2_STREAM_WIDTH, DEFAULT_V4L2_STREAM_HEIGHT, DEFAULT_V4L2_STREAM_FORMAT);
+            priv->mDev->set_crop(0, 0, DEFAULT_V4L2_STREAM_WIDTH, DEFAULT_V4L2_STREAM_HEIGHT);
             priv->mDev->start();
         }
         return 0;

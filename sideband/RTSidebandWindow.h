@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <inttypes.h>
 #include "rt_type.h"   // NOLINT
+#include "Utils.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -97,11 +98,12 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t setBufferGeometry(int32_t width, int32_t height, int32_t format);
     status_t setCrop(int32_t left, int32_t top, int32_t right, int32_t bottom);
 
-    status_t dumpImage(buffer_handle_t handle, char* fileName);
+    status_t dumpImage(buffer_handle_t handle, char* fileName, int mode);
 
     int32_t  getWidth() { return mSidebandInfo.width; }
     int32_t  getHeight() { return mSidebandInfo.height; }
     int32_t  getFormat() { return mSidebandInfo.format; }
+    status_t goDisplay(buffer_handle_t buffer);
 
  private:
     RTSidebandWindow(const RTSidebandWindow& other);
@@ -126,6 +128,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     std::unique_ptr<MessageThread>      mMessageThread;
     android::Mutex                      mLock;
     android::Condition                  mBufferAvailCondition;
+    int mDebugLevel;
 };
 
 }

@@ -31,10 +31,6 @@
 
 namespace android {
 
-#define DEFAULT_SIDEBAND_WIDTH          2560
-#define DEFAULT_SIDEBAND_HEIGHT         1440
-#define DEFAULT_SIDEBAND_FORMAT         0x15        //NV12
-
 #define MIN_BUFFER_COUNT_UNDEQUEUE      0
 
 RTSidebandWindow::RTSidebandWindow()
@@ -43,13 +39,14 @@ RTSidebandWindow::RTSidebandWindow()
           mThreadRunning(false),
           mMessageQueue("RenderThread", static_cast<int>(MESSAGE_ID_MAX)),
           mMessageThread(nullptr) {
-    ALOGV("%s %d in", __FUNCTION__, __LINE__);
-
     memset(&mSidebandInfo, 0, sizeof(mSidebandInfo));
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    property_get("DEBUG_LEVEL_PROPNAME", prop_value, "0");
+    mDebugLevel = (int)atoi(prop_value);
 }
 
 RTSidebandWindow::~RTSidebandWindow() {
-    ALOGV("%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
 }
 
 status_t RTSidebandWindow::init(RTSidebandInfo info) {
@@ -60,7 +57,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     mBuffMgr = common::TvInputBufferManager::GetInstance();
 
     if (info.structSize != sizeof(RTSidebandInfo)) {
-        ALOGE("sideband info struct size is invailed!");
+        DEBUG_PRINT(3, "sideband info struct size is invailed!");
         goto __FAILED;
     }
 
@@ -73,10 +70,12 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
         mVopRender->detect();
     }
 
+#if 0
     mMessageThread = std::unique_ptr<MessageThread>(new MessageThread(this, "VOP Render"));
     if (mMessageThread != NULL) {
         mMessageThread->run();
     }
+#endif
 
     return 0;
 __FAILED:
@@ -106,12 +105,12 @@ status_t RTSidebandWindow::release() {
 }
 
 status_t RTSidebandWindow::start() {
-    ALOGV("%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
     return 0;
 }
 
 status_t RTSidebandWindow::stop() {
-    ALOGV("%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
     return 0;
 }
 
@@ -125,7 +124,7 @@ status_t RTSidebandWindow::flush() {
 }
 
 status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
-    ALOGE("%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s %d in", __FUNCTION__, __LINE__);
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
     int ret = -1;
@@ -139,7 +138,7 @@ status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
                         &temp_buffer,
                         &stride);
     if (!temp_buffer) {
-        ALOGE("RTSidebandWindow::allocateBuffer mBuffMgr->Allocate failed !!!");
+        DEBUG_PRINT(3, "RTSidebandWindow::allocateBuffer mBuffMgr->Allocate failed !!!");
     } else {
         *buffer = temp_buffer;
         ret = 0;
@@ -153,15 +152,15 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
     uint32_t stride = 0;
     int ret = -1;
 
-    ret = mBuffMgr->Allocate(DEFAULT_SIDEBAND_WIDTH,
-                        DEFAULT_SIDEBAND_HEIGHT,
-                        DEFAULT_SIDEBAND_FORMAT,
+    ret = mBuffMgr->Allocate(DEFAULT_TVHAL_STREAM_WIDTH,
+                        DEFAULT_TVHAL_STREAM_HEIGHT,
+                        DEFAULT_TVHAL_STREAM_FORMAT,
                         0,
                         common::GRALLOC,
                         &temp_buffer,
                         &stride);
     if (!temp_buffer) {
-        ALOGE("RTSidebandWindow::allocateSidebandHandle mBuffMgr->Allocate failed !!!");
+        DEBUG_PRINT(3, "RTSidebandWindow::allocateSidebandHandle mBuffMgr->Allocate failed !!!");
     } else {
         *handle = temp_buffer;
         ret = 0;
@@ -170,7 +169,7 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
 }
 
 status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer) {
-    ALOGE("%s %d in has unregister", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s %d in has unregister", __FUNCTION__, __LINE__);
     // android::Mutex::Autolock _l(mLock);
     if (*buffer) {
         mBuffMgr->Free(*buffer);
@@ -180,7 +179,7 @@ status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer) {
 }
 
 status_t RTSidebandWindow::remainBuffer(buffer_handle_t buffer) {
-    ALOGV("remainBuffer buffer: %p", buffer);
+    DEBUG_PRINT(mDebugLevel, "remainBuffer buffer: %p", buffer);
     // android::Mutex::Autolock _l(mLock);
     mRenderingQueue.push_back(buffer);
     return 0;
@@ -216,7 +215,7 @@ status_t RTSidebandWindow::queueBuffer(buffer_handle_t buffer) {
 }
 
 status_t RTSidebandWindow::setBufferGeometry(int32_t width, int32_t height, int32_t format) {
-    ALOGV("%s %d width=%d height=%d in", __FUNCTION__, __LINE__, width, height);
+    DEBUG_PRINT(mDebugLevel, "%s %d width=%d height=%d in", __FUNCTION__, __LINE__, width, height);
     mSidebandInfo.width = width;
     mSidebandInfo.height = height;
     mSidebandInfo.format = format;
@@ -240,7 +239,7 @@ status_t RTSidebandWindow::requestExitAndWait()
     memset(&msg, 0, sizeof(Message));
     msg.id = MESSAGE_ID_EXIT;
     status_t status = mMessageQueue.send(&msg, MESSAGE_ID_EXIT);
-    status |= mMessageThread->requestExitAndWait();
+    //status |= mMessageThread->requestExitAndWait();
     return status;
 }
 
@@ -266,14 +265,14 @@ void RTSidebandWindow::messageThreadLoop() {
           status = handleFlush();
         break;
         default:
-          ALOGE("ERROR Unknown message %d", msg.id);
+          DEBUG_PRINT(3, "ERROR Unknown message %d", msg.id);
           status = BAD_VALUE;
         break;
         }
 
         if (status != NO_ERROR)
-            ALOGE("error %d in handling message: %d", status, static_cast<int>(msg.id));
-        ALOGV("@%s, finish message id:%d", __FUNCTION__, msg.id);
+            DEBUG_PRINT(3, "error %d in handling message: %d", status, static_cast<int>(msg.id));
+        DEBUG_PRINT(mDebugLevel, "@%s, finish message id:%d", __FUNCTION__, msg.id);
         mMessageQueue.reply(msg.id, status);
     }
 }
@@ -291,6 +290,11 @@ status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     mRenderingQueue.push_back(buffer);
     ALOGD("%s    mRenderingQueue.size() = %d", __FUNCTION__, (int32_t)mRenderingQueue.size());
 
+    return 0;
+}
+
+status_t RTSidebandWindow::goDisplay(buffer_handle_t handle) {
+    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, handle);
     return 0;
 }
 
@@ -312,7 +316,7 @@ status_t RTSidebandWindow::handleFlush() {
 
 int RTSidebandWindow::getBufferHandleFd(buffer_handle_t buffer){
     if (!buffer) {
-        ALOGE("%s param buffer is NULL.", __FUNCTION__);
+        DEBUG_PRINT(3, "%s param buffer is NULL.", __FUNCTION__);
         return -1;
     }
     return mBuffMgr->GetHandleFd(buffer);
@@ -320,16 +324,16 @@ int RTSidebandWindow::getBufferHandleFd(buffer_handle_t buffer){
 
 int RTSidebandWindow::getBufferLength(buffer_handle_t buffer) {
     if (!buffer) {
-        ALOGE("%s param buffer is NULL.", __FUNCTION__);
+        DEBUG_PRINT(3, "%s param buffer is NULL.", __FUNCTION__);
         return -1;
     }
     return mBuffMgr->GetHandleBufferSize(buffer);
 }
 
-int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName) {
+int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode) {
     int ret = -1;
     if (!handle || !fileName) {
-        ALOGE("%s param buffer is NULL.", __FUNCTION__);
+        DEBUG_PRINT(3, "%s param buffer is NULL.", __FUNCTION__);
         return ret;
     }
     FILE* fp =NULL;
@@ -339,8 +343,12 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName) {
     if (fp != NULL) {
         struct android_ycbcr ycbrData;
         int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
-        mBuffMgr->LockYCbCr(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &ycbrData);
-        dataPtr = ycbrData.y;
+        if (mode == 1) {
+            mBuffMgr->LockYCbCr(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &ycbrData);
+            dataPtr = ycbrData.y;
+        } else {
+            mBuffMgr->Lock(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &dataPtr);
+        }
         for (int i = 0; i < mBuffMgr->GetNumPlanes(handle); i++) {
             dataSize += mBuffMgr->GetPlaneSize(handle, i);
         }
@@ -350,7 +358,7 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName) {
         ALOGI("Write success h264 data to %s",fileName);
         ret = 0;
     } else {
-        ALOGE("Create %s failed(%p, %s)", fileName, fp, strerror(errno));
+        DEBUG_PRINT(3, "Create %s failed(%p, %s)", fileName, fp, strerror(errno));
     }
     return ret;
 }

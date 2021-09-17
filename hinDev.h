@@ -26,6 +26,7 @@
 #include <map>
 
 #include "sideband/RTSidebandWindow.h"
+#include "common/Utils.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -34,12 +35,10 @@
 
 using namespace android;
 
-#define HIN_DEV_NODE_MAIN "/dev/video9"
+#define HIN_DEV_NODE_MAIN "/dev/video0"
 #define HIN_DEV_NODE_OTHERS "/dev/video10"
 
 //#define NB_BUFFER 6
-
-#define SIDEBAND_WINDOW_BUFF_CNT 1
 
 typedef struct source_buffer_info {
     buffer_handle_t source_buffer_handle_t;
@@ -51,6 +50,7 @@ typedef struct source_buffer_info {
 struct HinNodeInfo {
     struct v4l2_capability cap;
     struct v4l2_format format;
+    struct v4l2_plane planes[SIDEBAND_WINDOW_BUFF_CNT];
     struct v4l2_buffer onceBuff;
     struct v4l2_requestbuffers reqBuf;
     struct v4l2_buffer bufferArray[SIDEBAND_WINDOW_BUFF_CNT];
@@ -116,8 +116,6 @@ class HinDevImpl {
         int set_mode(int display_mode);
         buffer_handle_t getSindebandBufferHandle();
     private:
-        int init_native_window();
-        int cacheToDisplay();
         int workThread();
     private:
         class WorkThread : public Thread {
@@ -163,6 +161,7 @@ class HinDevImpl {
         int mFrameType;
         app_data_callback mDataCB;
         bool mOpen;
+        int mDebugLevel;
         void *mUser;
         std::map<int, buffer_handle_t> mBufferHandleMap;
 };

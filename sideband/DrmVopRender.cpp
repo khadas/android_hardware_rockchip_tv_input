@@ -8,6 +8,7 @@
 #include <cutils/properties.h>
 
 #include "tvinput_buffer_manager.h"
+#include "Utils.h"
 
 #define HAS_ATOMIC 1
 
@@ -27,6 +28,7 @@ DrmVopRender::DrmVopRender()
       mInitialized(false)
 {
     memset(&mOutputs, 0, sizeof(mOutputs));
+    mSidebandPlaneId = -1;
 }
 
 DrmVopRender::~DrmVopRender()
@@ -267,6 +269,7 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
     case HAL_PIXEL_FORMAT_RGBX_8888:
       return DRM_FORMAT_XBGR8888;
     case HAL_PIXEL_FORMAT_RGBA_8888:
+    case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
       return DRM_FORMAT_ABGR8888;
     //Fix color error in NenaMark2.
     case HAL_PIXEL_FORMAT_RGB_565:
@@ -284,6 +287,9 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
 }
 
 int DrmVopRender::FindSidebandPlane(int device) {
+    if (mSidebandPlaneId != -1) {
+        return mSidebandPlaneId;
+    }
     drmModePlanePtr plane;
     drmModeObjectPropertiesPtr props;
     drmModePropertyPtr prop;
@@ -329,6 +335,8 @@ int DrmVopRender::FindSidebandPlane(int device) {
     }
     if (find_plan_id == 0) {
        return -1;
+    } else {
+        mSidebandPlaneId = find_plan_id;
     }
     ALOGV("FindSidebandPlane find_plan_id=%d", find_plan_id);
     return find_plan_id;
@@ -350,13 +358,9 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
     if (!handle) {
         ALOGE("%s buffer_handle_t is NULL.", __FUNCTION__);
         return -1;
-    } else {
-        ALOGE("%s %p", __FUNCTION__, handle);
     }
 
     common::TvInputBufferManager* tvBufferMgr = common::TvInputBufferManager::GetInstance();
-
-    void *data;
 
     hwc_drm_bo_t bo;
     int fd = 0;
@@ -388,7 +392,8 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_BYTE_STRIDE, handle, &src_stride);
         bo.width = src_w;
         bo.height = src_h;
-        bo.format = ConvertHalFormatToDrm(HAL_PIXEL_FORMAT_YCrCb_NV12);
+        //bo.format = ConvertHalFormatToDrm(HAL_PIXEL_FORMAT_YCrCb_NV12);
+        bo.format = ConvertHalFormatToDrm(src_format);
         bo.pitches[0] = src_stride;
         bo.gem_handles[0] = gem_handle;
         bo.offsets[0] = 0;
@@ -448,7 +453,7 @@ void DrmVopRender::resetOutput(int index)
 }
 
 bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle) {
-    ALOGD("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
+    ALOGV("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
     int ret = 0;
     int plane_id = FindSidebandPlane(device);
     int fb_id = getFbid(handle);
@@ -496,10 +501,10 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                           dst_w, dst_h,
                           0, 0,
                           src_w << 16, src_h << 16);
-        ALOGD("drmModeSetPlane ret=%s", strerror(ret));
+        ALOGV("drmModeSetPlane ret=%s", strerror(ret));
 
     }
-    ALOGD("%s end.", __FUNCTION__);
+    ALOGV("%s end.", __FUNCTION__);
     return true;
 }
 
