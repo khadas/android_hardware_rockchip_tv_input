@@ -34,9 +34,6 @@
 #define SIDEBAND_WINDOW_BUFF_CNT 4
 #define PLANES_NUM 1
 
-#define DEFAULT_TVHAL_STREAM_WIDTH 1920
-#define DEFAULT_TVHAL_STREAM_HEIGHT 1080
-
 #define DEFAULT_V4L2_STREAM_WIDTH 1280
 #define DEFAULT_V4L2_STREAM_HEIGHT 720
 #define DEFAULT_V4L2_STREAM_FORMAT V4L2_PIX_FMT_NV12
@@ -47,9 +44,13 @@
 //#define DEFAULT_TVHAL_STREAM_FORMAT HAL_PIXEL_FORMAT_sRGB_A_8888    // 0x18 = 24
 //#define DEFAULT_TVHAL_STREAM_FORMAT HAL_PIXEL_FORMAT_FLEX_RGBA_8888    // 0x18 = 24
 
-#define DUMP_YUV
+#define DUMP_YUV_IMG
 
+#define TV_INPUT_USER_FORMAT "vendor.tvinput.format"
+#define TV_INPUT_SKIP_FRAME "vendor.tvinput.skipframe"
+#define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
+
 #define DEBUG_PRINT(level, fmt, arg...)                       \
     do {                                                      \
         if (3 == level)                                       \

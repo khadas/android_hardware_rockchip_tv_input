@@ -241,11 +241,24 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
         }
 
         if (priv->mDev) {
+
+            int width = 0, height = 0;
+            char prop_value[PROPERTY_VALUE_MAX] = {0};
+            property_get(TV_INPUT_USER_FORMAT, prop_value, "default");
+            if (strcmp(prop_value, "default") != 0) {
+                sscanf(prop_value, "%dx%d", &width, &height);
+                DEBUG_PRINT(1, "user format = %s, width=%d, height=%d\n", prop_value, width, height);
+            } else {
+                width = DEFAULT_V4L2_STREAM_WIDTH;
+                height = DEFAULT_V4L2_STREAM_HEIGHT;
+            }
+
+            priv->mDev->set_format(width, height, DEFAULT_V4L2_STREAM_FORMAT);
+            priv->mDev->set_crop(0, 0, width, height);
+
             stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
             stream->sideband_stream_source_handle = native_handle_clone(priv->mDev->getSindebandBufferHandle());
 
-            priv->mDev->set_format(DEFAULT_V4L2_STREAM_WIDTH, DEFAULT_V4L2_STREAM_HEIGHT, DEFAULT_V4L2_STREAM_FORMAT);
-            priv->mDev->set_crop(0, 0, DEFAULT_V4L2_STREAM_WIDTH, DEFAULT_V4L2_STREAM_HEIGHT);
             priv->mDev->start();
         }
         return 0;
@@ -260,7 +273,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 
     if (priv) {
         if (priv->mDev) {
-            priv->mDev->stop_device();
+            priv->mDev->stop();
         }
     }
     return -EINVAL;

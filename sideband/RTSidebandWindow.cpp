@@ -124,12 +124,10 @@ status_t RTSidebandWindow::flush() {
 }
 
 status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
-    DEBUG_PRINT(3, "%s %d in", __FUNCTION__, __LINE__);
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
     int ret = -1;
 
-    ALOGD("allocateBuffer::init width=%d, height=%d, format=%d, usage=%d\n", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, mSidebandInfo.usage);
     ret = mBuffMgr->Allocate(mSidebandInfo.width,
                         mSidebandInfo.height,
                         mSidebandInfo.format,
@@ -152,9 +150,9 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
     uint32_t stride = 0;
     int ret = -1;
 
-    ret = mBuffMgr->Allocate(DEFAULT_TVHAL_STREAM_WIDTH,
-                        DEFAULT_TVHAL_STREAM_HEIGHT,
-                        DEFAULT_TVHAL_STREAM_FORMAT,
+    ret = mBuffMgr->Allocate(mSidebandInfo.width,
+                        mSidebandInfo.height,
+                        mSidebandInfo.format,
                         0,
                         common::GRALLOC,
                         &temp_buffer,
@@ -339,7 +337,7 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode
     FILE* fp =NULL;
     void *dataPtr = NULL;
     int dataSize = 0;
-    fp = fopen(fileName, "ab+");
+    fp = fopen(fileName, "wb+");
     if (fp != NULL) {
         struct android_ycbcr ycbrData;
         int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;

@@ -112,6 +112,7 @@ class HinDevImpl {
         buffer_handle_t getSindebandBufferHandle();
     private:
         int workThread();
+        int makeHwcSidebandHandle();
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -157,6 +158,9 @@ class HinDevImpl {
         app_data_callback mDataCB;
         bool mOpen;
         int mDebugLevel;
+        int mSkipFrame;
+        bool mDumpType;
+        int mDumpFrameCount;
         void *mUser;
         std::map<int, buffer_handle_t> mBufferHandleMap;
 };

@@ -175,7 +175,7 @@ int TvInputBufferManagerImpl::GetHalPixelFormat(buffer_handle_t buffer) {
         ALOGE("ailed to get pixel_format_requested. err : %d", err);
         return err;
     }
-    ALOGD("GetHalPixelFormat %d", (int)format);
+    ALOGV("GetHalPixelFormat %d", (int)format);
 
     return (int)format;
 }
@@ -426,7 +426,7 @@ status_t TvInputBufferManagerImpl::createDescriptor(void* bufferDescriptorInfo,
 
 status_t TvInputBufferManagerImpl::importBuffer(buffer_handle_t rawHandle,
                                       buffer_handle_t* outBufferHandle) const {
-    ALOGD("import rawBuffer :%p", rawHandle);
+    ALOGV("import rawBuffer :%p", rawHandle);
     Error error;
     auto &mapper = get_mapperservice();
     auto ret = mapper.importBuffer(android::hardware::hidl_handle(rawHandle), [&](const auto& tmpError, const auto& tmpBuffer) {
@@ -435,7 +435,7 @@ status_t TvInputBufferManagerImpl::importBuffer(buffer_handle_t rawHandle,
             return;
         }
         *outBufferHandle = static_cast<buffer_handle_t>(tmpBuffer);
-        ALOGD("import outBuffer :%p", outBufferHandle);
+        ALOGV("import outBuffer :%p", outBufferHandle);
     });
 
     return static_cast<status_t>((ret.isOk()) ? error : kTransactionError);
@@ -571,7 +571,7 @@ int TvInputBufferManagerImpl::Lockinternal(buffer_handle_t bufferHandle,
                                   uint32_t width,
                                   uint32_t height,
                                   void** out_addr) {
-    ALOGD("lock buffer:%p   %d, %d, %d, %d, %d", bufferHandle, x, y,width, height, flags);
+    ALOGV("lock buffer:%p   %d, %d, %d, %d, %d", bufferHandle, x, y,width, height, flags);
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
@@ -621,7 +621,7 @@ int TvInputBufferManagerImpl::Lockinternal(buffer_handle_t bufferHandle,
 }
 
 int TvInputBufferManagerImpl::Unlockinternal(buffer_handle_t bufferHandle) {
-    ALOGD("Unlock buffer:%p", bufferHandle);
+    ALOGV("Unlock buffer:%p", bufferHandle);
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
@@ -632,7 +632,7 @@ int TvInputBufferManagerImpl::Unlockinternal(buffer_handle_t bufferHandle) {
     if (buffer_context->type == GRALLOC) {
         auto &mapper = get_mapperservice();
         auto buffer = const_cast<native_handle_t*>(bufferHandle);
-        ALOGD("Unlock buffer:%p", buffer);
+        ALOGV("Unlock buffer:%p", buffer);
 
         int releaseFence = -1;
         Error error;
@@ -700,7 +700,7 @@ int TvInputBufferManagerImpl::Lock(buffer_handle_t bufferHandle,
     if (buffer_context->type == GRALLOC) {
         auto &mapper = get_mapperservice();
         auto buffer = const_cast<native_handle_t*>(bufferHandle);
-        ALOGD("lock buffer:%p", &buffer);
+        ALOGV("lock buffer:%p", &buffer);
 
         IMapper::Rect accessRegion = {(int)x, (int)y, (int)width, (int)height};
 
