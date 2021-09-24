@@ -21,7 +21,7 @@
 #ifndef ROCKIT_OSAL_RTSIDEBANDWINDOW_H_
 #define ROCKIT_OSAL_RTSIDEBANDWINDOW_H_
 
-#include "tvinput_buffer_manager_gralloc4_impl.h"
+#include "TvInput_Buffer_Manager_gralloc4_impl.h"
 #include <cutils/native_handle.h>
 #include <utils/RefBase.h>
 #include <hardware/hardware.h>

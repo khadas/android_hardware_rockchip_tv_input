@@ -7,7 +7,7 @@
 #ifndef COMMON_TVINPUT_BUFFER_MANAGER_IMPL_H_
 #define COMMON_TVINPUT_BUFFER_MANAGER_IMPL_H_
 
-#include "tvinput_buffer_manager.h"
+#include "TvInput_Buffer_Manager.h"
 
 #include <memory>
 #include <unordered_map>

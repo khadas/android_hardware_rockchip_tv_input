@@ -24,11 +24,11 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_CFLAGS += -Wno-unused-parameter -Wno-uninitialized -Wno-unused-variable -Wno-unused-function
 
 LOCAL_SRC_FILES := \
-    common/tvinput_buffer_manager_gralloc4_impl.cpp \
+    common/TvInput_Buffer_Manager_gralloc4_impl.cpp \
     sideband/RTSidebandWindow.cpp \
     sideband/DrmVopRender.cpp \
     sideband/MessageThread.cpp \
-    hinDevImpl.cpp \
+    HinDevImpl.cpp \
     tv_input.cpp
 
 LOCAL_SHARED_LIBRARIES := \

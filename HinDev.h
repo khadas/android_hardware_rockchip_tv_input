@@ -113,6 +113,7 @@ class HinDevImpl {
     private:
         int workThread();
         int makeHwcSidebandHandle();
+        void debugShowFPS();
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;

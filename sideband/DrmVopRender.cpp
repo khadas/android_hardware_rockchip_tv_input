@@ -7,7 +7,7 @@
 #include <sys/mman.h>
 #include <cutils/properties.h>
 
-#include "tvinput_buffer_manager.h"
+#include "TvInput_Buffer_Manager.h"
 #include "Utils.h"
 
 #define HAS_ATOMIC 1

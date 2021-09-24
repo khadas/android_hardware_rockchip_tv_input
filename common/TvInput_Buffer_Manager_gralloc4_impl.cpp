@@ -11,7 +11,7 @@
 #include <hardware/hardware_rockchip.h>
 #endif
 
-#include "tvinput_buffer_manager_gralloc4_impl.h"
+#include "TvInput_Buffer_Manager_gralloc4_impl.h"
 #include <hwbinder/IPCThreadState.h>
 #include <sync/sync.h>
 #include <drm_fourcc.h>

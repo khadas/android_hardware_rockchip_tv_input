@@ -17,12 +17,13 @@
 #include <sys/select.h>
 #include <linux/videodev2.h>
 #include <sys/time.h>
+#include <utils/Timers.h>
 
 #include <cutils/properties.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "hinDev.h"
+#include "HinDev.h"
 #include <ui/GraphicBufferMapper.h>
 #include <ui/GraphicBuffer.h>
 #include <linux/videodev2.h>
@@ -703,7 +704,7 @@ int HinDevImpl::workThread()
         } else if (mSkipFrame > 0) {
             mSkipFrame--;
         }
-
+        debugShowFPS();
         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret != 0) {
             DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
@@ -713,5 +714,21 @@ int HinDevImpl::workThread()
         mHinNodeInfo->currBufferHandleIndex++;
     }
     return NO_ERROR;
+}
+
+void HinDevImpl::debugShowFPS() {
+    static int mFrameCount = 0;
+    static int mLastFrameCount = 0;
+    static nsecs_t mLastFpsTime = 0;
+    static float mFps = 0;
+    mFrameCount++;
+    if (!(mFrameCount & 0x1F)) {
+        nsecs_t now = systemTime();
+        nsecs_t diff = now - mLastFpsTime;
+        mFps = ((mFrameCount - mLastFrameCount) * float(s2ns(1))) / diff;
+        mLastFpsTime = now;
+        mLastFrameCount = mFrameCount;
+        DEBUG_PRINT(3, "tvinput: %d Frames, %2.3f FPS", mFrameCount, mFps);
+    }
 }
 

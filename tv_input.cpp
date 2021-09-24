@@ -18,7 +18,7 @@
 #include <android/native_window.h>
 #include <hardware/hardware.h>
 #include <hardware/tv_input.h>
-#include "hinDev.h"
+#include "HinDev.h"
 #include "Utils.h"
 
 #ifdef LOG_TAG
