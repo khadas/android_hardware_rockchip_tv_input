@@ -212,6 +212,8 @@ int HinDevImpl::init(int id) {
             DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_OTHERS);
         }
     }
+   mV4l2Event = new V4L2DeviceEvent(mHinDevHandle);
+   mV4l2Event->RegisterEventvCallBack(HandlerCallbackMessage);
 
     mHinNodeInfo = (struct HinNodeInfo *) calloc (1, sizeof (struct HinNodeInfo));
     if (mHinNodeInfo == NULL)
@@ -290,6 +292,7 @@ HinDevImpl::~HinDevImpl()
 
 int HinDevImpl::start_device()
 {
+    mV4l2Event->initialize();
     int ret = -1;
 
     DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
@@ -666,7 +669,9 @@ int HinDevImpl::release_buffer()
     DEBUG_PRINT(mDebugLevel, "%s %d", __FUNCTION__, __LINE__);
     return -1;
 }
-
+void HinDevImpl::HandlerCallbackMessage(int width, int height,int isHdmiIn){
+    ALOGE("HinDevImpl::HandlerCallbackMessage() %d,%d,%d",width,height,isHdmiIn);
+}
 int HinDevImpl::workThread()
 {
     DEBUG_PRINT(mDebugLevel, "HinDevImpl::workThread()");

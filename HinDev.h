@@ -24,7 +24,7 @@
 #include <system/window.h>
 #include <hardware/gralloc.h>
 #include <map>
-
+#include "TvDeviceV4L2Event.h"
 #include "sideband/RTSidebandWindow.h"
 #include "common/Utils.h"
 
@@ -109,6 +109,7 @@ class HinDevImpl {
         int start_device();
         int stop_device();
         int set_mode(int display_mode);
+        static void HandlerCallbackMessage(int width, int height,int isHdmiIn);
         buffer_handle_t getSindebandBufferHandle();
     private:
         int workThread();
@@ -153,6 +154,7 @@ class HinDevImpl {
         mutable Mutex mLock;
         int mHinDevHandle;
         struct HinNodeInfo *mHinNodeInfo;
+        sp<V4L2DeviceEvent>     mV4l2Event;
         buffer_handle_t         mSidebandHandle;
         sp<RTSidebandWindow>    mSidebandWindow;
         int mFrameType;

@@ -29,6 +29,7 @@ LOCAL_SRC_FILES := \
     sideband/DrmVopRender.cpp \
     sideband/MessageThread.cpp \
     HinDevImpl.cpp \
+    TvDeviceV4L2Event.cpp \
     tv_input.cpp
 
 LOCAL_SHARED_LIBRARIES := \
