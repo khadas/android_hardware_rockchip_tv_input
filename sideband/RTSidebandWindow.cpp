@@ -64,10 +64,12 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
     ALOGD("\nRTSidebandWindow::init width=%d, height=%d, format=%d, usage=%d\n", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, mSidebandInfo.usage);
 
-    mVopRender = new DrmVopRender();
-    ready = mVopRender->initialize();
-    if (ready) {
-        mVopRender->detect();
+    mVopRender = android::DrmVopRender::GetInstance();
+    if (!mVopRender->mInitialized) {
+        ready = mVopRender->initialize();
+        if (ready) {
+            mVopRender->detect();
+        }
     }
 
 #if 0
@@ -96,11 +98,6 @@ status_t RTSidebandWindow::release() {
         mBuffMgr->Free(tmpBuffer);
     }
 
-    mVopRender->deinitialize();
-    if (mVopRender) {
-        delete mVopRender;
-        mVopRender = NULL;
-    }
     return 0;
 }
 
@@ -111,6 +108,11 @@ status_t RTSidebandWindow::start() {
 
 status_t RTSidebandWindow::stop() {
     DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
+    mVopRender->deinitialize();
+    if (mVopRender) {
+        delete mVopRender;
+        mVopRender = NULL;
+    }
     return 0;
 }
 
@@ -167,7 +169,7 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
 }
 
 status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer) {
-    DEBUG_PRINT(3, "%s %d in has unregister", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(0, "%s %d in unregister", __FUNCTION__, __LINE__);
     // android::Mutex::Autolock _l(mLock);
     if (*buffer) {
         mBuffMgr->Free(*buffer);
@@ -296,6 +298,13 @@ status_t RTSidebandWindow::goDisplay(buffer_handle_t handle) {
     return 0;
 }
 
+status_t RTSidebandWindow::clearVopArea() {
+    ALOGD("RTSidebandWindow::clearVopArea()");
+    mVopRender->DestoryFB();
+    mVopRender->ClearDrmPlaneContent(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top);
+    return 0;
+}
+
 status_t RTSidebandWindow::handleDequeueRequest(Message &msg) {
     (void)msg;
     mRenderingQueue.erase(mRenderingQueue.begin());
@@ -309,6 +318,7 @@ status_t RTSidebandWindow::handleFlush() {
         mRenderingQueue.erase(mRenderingQueue.begin());
         freeBuffer(&buffer);
     }
+
     return 0;
 }
 

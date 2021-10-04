@@ -862,7 +862,7 @@ int TvInputBufferManagerImpl::LockYCbCr(buffer_handle_t buffer,
 }
 
 int TvInputBufferManagerImpl::Unlock(buffer_handle_t bufferHandle) {
-    ALOGD("Unlock buffer:%p", bufferHandle);
+    ALOGV("Unlock buffer:%p", bufferHandle);
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {

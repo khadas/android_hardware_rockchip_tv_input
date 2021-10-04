@@ -23,6 +23,7 @@
 #include <android/native_window.h>
 #include <system/window.h>
 #include <hardware/gralloc.h>
+#include <hardware/tv_input.h>
 #include <map>
 #include "TvDeviceV4L2Event.h"
 #include "sideband/RTSidebandWindow.h"
@@ -67,7 +68,7 @@ enum State{
     START,
     PAUSE,
     STOPING,
-    STOP,
+    STOPED,
 };
 
 enum FrameType{
@@ -88,7 +89,7 @@ class HinDevImpl {
     public:
         HinDevImpl();
         ~HinDevImpl();
-        int init(int id);
+        int init(int id, int width, int height);
         int start();
         int stop();
         int pause();
@@ -102,15 +103,16 @@ class HinDevImpl {
         // int inc_buffer_refcount(int* ptr);
         int release_buffer();
         int set_state_callback(olStateCB callback);
-        int set_data_callback(app_data_callback callback, void* user);
+        int set_data_callback(V4L2EventCallBack callback);
         int set_frame_rate(int frameRate);
         int get_current_sourcesize(int * width,int * height);
         int set_screen_mode(int mode);
         int start_device();
         int stop_device();
         int set_mode(int display_mode);
-        static void HandlerCallbackMessage(int width, int height,int isHdmiIn);
         buffer_handle_t getSindebandBufferHandle();
+
+        const tv_input_callback_ops_t* mTvInputCB;
     private:
         int workThread();
         int makeHwcSidebandHandle();
@@ -158,12 +160,11 @@ class HinDevImpl {
         buffer_handle_t         mSidebandHandle;
         sp<RTSidebandWindow>    mSidebandWindow;
         int mFrameType;
-        app_data_callback mDataCB;
         bool mOpen;
         int mDebugLevel;
         int mSkipFrame;
         bool mDumpType;
+        int mShowFps;
         int mDumpFrameCount;
         void *mUser;
-        std::map<int, buffer_handle_t> mBufferHandleMap;
 };

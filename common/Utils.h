@@ -34,8 +34,8 @@
 #define SIDEBAND_WINDOW_BUFF_CNT 4
 #define PLANES_NUM 1
 
-#define DEFAULT_V4L2_STREAM_WIDTH 1280
-#define DEFAULT_V4L2_STREAM_HEIGHT 720
+#define DEFAULT_V4L2_STREAM_WIDTH 1920
+#define DEFAULT_V4L2_STREAM_HEIGHT 1080
 #define DEFAULT_V4L2_STREAM_FORMAT V4L2_PIX_FMT_NV12
 
 //HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED
@@ -49,6 +49,8 @@
 #define TV_INPUT_USER_FORMAT "vendor.tvinput.format"
 #define TV_INPUT_SKIP_FRAME "vendor.tvinput.skipframe"
 #define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
+#define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
+
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \

@@ -104,6 +104,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int32_t  getHeight() { return mSidebandInfo.height; }
     int32_t  getFormat() { return mSidebandInfo.format; }
     status_t goDisplay(buffer_handle_t buffer);
+    status_t clearVopArea();
 
  private:
     RTSidebandWindow(const RTSidebandWindow& other);

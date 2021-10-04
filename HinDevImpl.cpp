@@ -40,6 +40,9 @@
 #define ALIGN_32(x) ((x + (BOUNDRY) - 1)& ~((BOUNDRY) - 1))
 #define ALIGN(b,w) (((b)+((w)-1))/(w)*(w))
 
+static int sNewFrameWidth = DEFAULT_V4L2_STREAM_WIDTH;
+static int sNewFrameHeight = DEFAULT_V4L2_STREAM_HEIGHT;
+
 static size_t getBufSize(int format, int width, int height)
 {
     size_t buf_size = 0;
@@ -171,24 +174,28 @@ HinDevImpl::HinDevImpl()
                   : mHinDevHandle(-1),
                     mHinNodeInfo(NULL),
                     mSidebandHandle(NULL),
-                    mDumpFrameCount(3)
+                    mDumpFrameCount(1)
 {
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     property_get(DEBUG_LEVEL_PROPNAME, prop_value, "0");
     mDebugLevel = (int)atoi(prop_value);
 
-    property_get(TV_INPUT_SKIP_FRAME, prop_value, "5");
+    property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
     mSkipFrame = (int)atoi(prop_value);
 
     property_get(TV_INPUT_DUMP_TYPE, prop_value, "0");
     mDumpType = (int)atoi(prop_value);
     if (mDumpType == 1)
-        mDumpFrameCount = 50;
+        mDumpFrameCount = 3;
+
+    property_get(TV_INPUT_SHOW_FPS, prop_value, "0");
+    mShowFps = (int)atoi(prop_value);
 
     DEBUG_PRINT(1, "prop value : mDebugLevel=%d, mSkipFrame=%d, mDumpType=%d", mDebugLevel, mSkipFrame, mDumpType);
+    mV4l2Event = new V4L2DeviceEvent();
 }
 
-int HinDevImpl::init(int id) {
+int HinDevImpl::init(int id, int initWidth, int initHeight) {
     if (!access(HIN_DEV_NODE_MAIN, F_OK|R_OK)) {
         mHinDevHandle = open(HIN_DEV_NODE_MAIN, O_RDWR);
         if (mHinDevHandle < 0)
@@ -203,7 +210,7 @@ int HinDevImpl::init(int id) {
             DEBUG_PRINT(3, "%s access failed!", HIN_DEV_NODE_OTHERS);
             return -1;
         }
-        mHinDevHandle = open(HIN_DEV_NODE_OTHERS, O_RDWR| O_NONBLOCK);
+        mHinDevHandle = open(HIN_DEV_NODE_OTHERS, O_RDWR);
         if (mHinDevHandle < 0)
         {
             DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, mHinDevHandle,strerror(errno));
@@ -212,8 +219,8 @@ int HinDevImpl::init(int id) {
             DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_OTHERS);
         }
     }
-   mV4l2Event = new V4L2DeviceEvent(mHinDevHandle);
-   mV4l2Event->RegisterEventvCallBack(HandlerCallbackMessage);
+
+    mV4l2Event->initialize(mHinDevHandle);
 
     mHinNodeInfo = (struct HinNodeInfo *) calloc (1, sizeof (struct HinNodeInfo));
     if (mHinNodeInfo == NULL)
@@ -229,29 +236,28 @@ int HinDevImpl::init(int id) {
     mFramecount = 0;
     mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
     mPixelFormat = DEFAULT_TVHAL_STREAM_FORMAT;
-    mFrameWidth = DEFAULT_V4L2_STREAM_WIDTH;
-    mFrameHeight = DEFAULT_V4L2_STREAM_HEIGHT;
+    mFrameWidth = initWidth;
+    mFrameHeight = initHeight;
     mBufferSize = mFrameWidth * mFrameHeight * 3/2;
     mSetStateCB = NULL;
-    mState = STOP;
+    mState = STOPED;
     mANativeWindow = NULL;
     mFrameType = 0;
     mWorkThread = NULL;
-    mDataCB = NULL;
+    mTvInputCB = NULL;
     mOpen = false;
 
+    mSidebandWindow = new RTSidebandWindow();
     /**
      *  init RTSidebandWindow
      */
-    mSidebandWindow = new RTSidebandWindow();
-
     RTSidebandInfo info;
     memset(&info, 0, sizeof(RTSidebandInfo));
     info.structSize = sizeof(RTSidebandInfo);
     info.top = 0;
     info.left = 0;
-    info.width = mFrameWidth;
-    info.height = mFrameHeight;
+    info.width = initWidth;
+    info.height = initHeight;
     info.usage = GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_HW_CAMERA_WRITE
         |  GRALLOC_USAGE_HW_VIDEO_ENCODER;
     info.format = DEFAULT_TVHAL_STREAM_FORMAT; //0x15
@@ -284,6 +290,11 @@ buffer_handle_t HinDevImpl::getSindebandBufferHandle() {
 
 HinDevImpl::~HinDevImpl()
 {
+    DEBUG_PRINT(3, "%s %d", __FUNCTION__, __LINE__);
+    if (mSidebandWindow) {
+        mSidebandWindow->stop();
+    }
+
     if (mHinNodeInfo)
         free (mHinNodeInfo);
     if (mHinDevHandle >= 0)
@@ -292,7 +303,6 @@ HinDevImpl::~HinDevImpl()
 
 int HinDevImpl::start_device()
 {
-    mV4l2Event->initialize();
     int ret = -1;
 
     DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
@@ -320,39 +330,7 @@ int HinDevImpl::start_device()
         ALOGD("VIDIOC_REQBUFS successful.");
     }
 
-    for (int i = 0; i < mBufferCount; i++) {
-        memset(&mHinNodeInfo->planes[i], 0, sizeof(struct v4l2_plane));
-        memset(&mHinNodeInfo->bufferArray[i], 0, sizeof(struct v4l2_buffer));
-
-        mHinNodeInfo->bufferArray[i].index = i;
-        mHinNodeInfo->bufferArray[i].type = TVHAL_V4L2_BUF_TYPE;
-        mHinNodeInfo->bufferArray[i].memory = TVHAL_V4L2_BUF_MEMORY;
-        if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
-            mHinNodeInfo->bufferArray[i].m.planes = &mHinNodeInfo->planes[i];
-            mHinNodeInfo->bufferArray[i].length = PLANES_NUM;
-        }
-
-        ret = ioctl(mHinDevHandle, VIDIOC_QUERYBUF, &mHinNodeInfo->bufferArray[i]);
-        if (ret < 0) {
-            DEBUG_PRINT(3, "VIDIOC_QUERYBUF Failed, error: %s", strerror(errno));
-            return ret;
-        }
-
-        ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
-        if (ret != 0) {
-            DEBUG_PRINT(3, "mSidebandWindow->allocateBuffer failed !!!");
-            return ret;
-        }
- 
-        if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
-            for (int j=0; j<PLANES_NUM; j++) {
-                mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
-                mHinNodeInfo->bufferArray[i].m.planes[j].length = 0;
-                mBufferHandleMap.insert(std::make_pair(mHinNodeInfo->bufferArray[i].m.planes[j].m.fd, mHinNodeInfo->buffer_handle_poll[i]));
-            }
-        }
-    }
-    ALOGD("[%s %d] VIDIOC_QUERYBUF successful", __FUNCTION__, __LINE__);
+    aquire_buffer();
 
     for (int i = 0; i < mBufferCount; i++) {
         DEBUG_PRINT(mDebugLevel, "bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
@@ -422,42 +400,41 @@ int HinDevImpl::start()
 
 int HinDevImpl::stop()
 {
-    DEBUG_PRINT(3, "!!!!!!!!!%s %d", __FUNCTION__, __LINE__);
+    ALOGD("%s %d", __FUNCTION__, __LINE__);
     int ret;
-
-    mState = STOPING;
-
-    if(mWorkThread != NULL){
-        mWorkThread->requestExitAndWait();
-        mWorkThread.clear();
-    }
 
     enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
 
     ret = ioctl (mHinDevHandle, VIDIOC_STREAMOFF, &bufType);
     if (ret < 0) {
         DEBUG_PRINT(3, "StopStreaming: Unable to stop capture: %s", strerror(errno));
+    } else {
+        DEBUG_PRINT(3, "StopStreaming: successful.");
     }
 
-    if (mBufferHandleMap.size() != 0) {
-        mBufferHandleMap.clear();
+    if(mWorkThread != NULL){
+        mWorkThread->requestExit();
+        mWorkThread.clear();
+        mWorkThread = NULL;
     }
+    mState = STOPED;
+    release_buffer();
 
-    if (mSidebandHandle) {
-        mSidebandWindow->freeBuffer(&mSidebandHandle);
-        mSidebandWindow->flush();
-    }
-    if (mSidebandWindow.get()) {
-        mSidebandWindow->release();
-        mSidebandWindow.clear();
-    }
+    mSidebandWindow->clearVopArea();
+    mDumpFrameCount = 3;
 
-    mBufferCount = 0;
-    mState = STOP;
-    if(mSetStateCB != NULL)
-        mSetStateCB(STOP);
     mOpen = false;
 
+    if (mHinNodeInfo)
+        free (mHinNodeInfo);
+
+    if (mV4l2Event)
+        mV4l2Event->closeEventThread();
+
+    if (mHinDevHandle >= 0)
+        close(mHinDevHandle);
+
+    DEBUG_PRINT(3, "============================= %s end ================================", __FUNCTION__);
     return ret;
 }
 
@@ -471,16 +448,14 @@ int HinDevImpl::set_state_callback(olStateCB callback)
     return NO_ERROR;
 }
 
-int HinDevImpl::set_data_callback(app_data_callback callback, void* user)
+int HinDevImpl::set_data_callback(V4L2EventCallBack callback)
 {
     ALOGD("%s %d", __FUNCTION__, __LINE__);
     if (callback == NULL){
         DEBUG_PRINT(3, "NULL data callback pointer");
         return BAD_VALUE;
     }
-    mDataCB = callback;
-    mUser = user;
-    mFrameType |= CALL_BACK_DATA;
+    mV4l2Event->RegisterEventvCallBack(callback);
     return NO_ERROR;
 }
 
@@ -616,7 +591,7 @@ int HinDevImpl::set_hin_crop(int x, int y, int width, int height)
     struct v4l2_crop crop;
     memset(&crop, 0, sizeof(struct v4l2_crop));
 
-    crop.type = V4L2_BUF_TYPE_VIDEO_OVERLAY;
+    crop.type = TVHAL_V4L2_BUF_TYPE;
     crop.c.left = x;
     crop.c.top = y;
     crop.c.width = width;
@@ -660,27 +635,66 @@ int HinDevImpl::set_screen_mode(int mode)
 
 int HinDevImpl::aquire_buffer()
 {
+    int ret = NO_ERROR;
     DEBUG_PRINT(mDebugLevel, "%s %d", __FUNCTION__, __LINE__);
+    for (int i = 0; i < mBufferCount; i++) {
+        memset(&mHinNodeInfo->planes[i], 0, sizeof(struct v4l2_plane));
+        memset(&mHinNodeInfo->bufferArray[i], 0, sizeof(struct v4l2_buffer));
+
+        mHinNodeInfo->bufferArray[i].index = i;
+        mHinNodeInfo->bufferArray[i].type = TVHAL_V4L2_BUF_TYPE;
+        mHinNodeInfo->bufferArray[i].memory = TVHAL_V4L2_BUF_MEMORY;
+        if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
+            mHinNodeInfo->bufferArray[i].m.planes = &mHinNodeInfo->planes[i];
+            mHinNodeInfo->bufferArray[i].length = PLANES_NUM;
+        }
+
+        ret = ioctl(mHinDevHandle, VIDIOC_QUERYBUF, &mHinNodeInfo->bufferArray[i]);
+        if (ret < 0) {
+            DEBUG_PRINT(3, "VIDIOC_QUERYBUF Failed, error: %s", strerror(errno));
+            return ret;
+        }
+
+        ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
+        if (ret != 0) {
+            DEBUG_PRINT(3, "mSidebandWindow->allocateBuffer failed !!!");
+            return ret;
+        }
+ 
+        if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
+            for (int j=0; j<PLANES_NUM; j++) {
+                mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
+                mHinNodeInfo->bufferArray[i].m.planes[j].length = 0;                
+            }
+        }
+    }
+    ALOGD("[%s %d] VIDIOC_QUERYBUF successful", __FUNCTION__, __LINE__);
     return -1;
 }
 
 int HinDevImpl::release_buffer()
 {
     DEBUG_PRINT(mDebugLevel, "%s %d", __FUNCTION__, __LINE__);
+    for (int i=0; i<mBufferCount; i++) {
+        mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
+    }
+
+    if (mSidebandHandle) {
+        mSidebandWindow->freeBuffer(&mSidebandHandle);
+        mSidebandHandle = NULL;
+    }
     return -1;
 }
-void HinDevImpl::HandlerCallbackMessage(int width, int height,int isHdmiIn){
-    ALOGE("HinDevImpl::HandlerCallbackMessage() %d,%d,%d",width,height,isHdmiIn);
-}
+
 int HinDevImpl::workThread()
 {
     DEBUG_PRINT(mDebugLevel, "HinDevImpl::workThread()");
     int ret;
 
     if (mState == START) {
-        if (mHinNodeInfo->currBufferHandleIndex > 3) {
-            mHinNodeInfo->currBufferHandleIndex = 0;
-        }
+        if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
+             mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
+
         DEBUG_PRINT(mDebugLevel, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  
         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
@@ -722,6 +736,8 @@ int HinDevImpl::workThread()
 }
 
 void HinDevImpl::debugShowFPS() {
+    if (mShowFps == 0)
+        return;
     static int mFrameCount = 0;
     static int mLastFrameCount = 0;
     static nsecs_t mLastFpsTime = 0;

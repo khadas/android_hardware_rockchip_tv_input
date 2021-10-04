@@ -29,10 +29,10 @@ using V4L2EventCallBack =
 //typedef void (*V4L2EventCallBack)(int width, int height,int isHdmiIn);
 class V4L2DeviceEvent : public virtual android::RefBase{
 public:
-    explicit V4L2DeviceEvent(int fd);
+    explicit V4L2DeviceEvent();
     virtual ~V4L2DeviceEvent();
     
-    virtual int initialize();
+    virtual int initialize(int fd);
     virtual void closeEventThread();
     virtual status_t setControl(int aControlNum, const int value, const char *name);
     virtual status_t getControl(int aControlNum, int *value);

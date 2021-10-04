@@ -24,8 +24,7 @@ namespace android {
 #define ALIGN_DOWN( value, base)     (value & (~(base-1)) )
 
 DrmVopRender::DrmVopRender()
-    : mDrmFd(0),
-      mInitialized(false)
+    : mDrmFd(0)
 {
     memset(&mOutputs, 0, sizeof(mOutputs));
     mSidebandPlaneId = -1;
@@ -34,6 +33,11 @@ DrmVopRender::DrmVopRender()
 DrmVopRender::~DrmVopRender()
 {
    // WARN_IF_NOT_DEINIT();
+}
+
+DrmVopRender* DrmVopRender::GetInstance() {
+    static DrmVopRender instance;
+    return &instance;
 }
 
 bool DrmVopRender::initialize()
@@ -85,6 +89,16 @@ void DrmVopRender::deinitialize()
     }
 
     mInitialized = false;
+}
+
+void DrmVopRender::DestoryFB() {
+    for (const auto &fbidMap : mFbidMap) {
+        int fbid = fbidMap.second;
+        ALOGV("%s fbid=%d", __FUNCTION__, fbid);
+        if (drmModeRmFB(mDrmFd, fbid))
+            ALOGE("Failed to rm fb");
+    }
+    mFbidMap.clear();
 }
 
 bool DrmVopRender::detect() {
@@ -476,7 +490,6 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     int src_h = 0;
     int dst_w = 0;
     int dst_h = 0;
-    int src_format = 0;
     char sideband_crop[PROPERTY_VALUE_MAX];
     memset(sideband_crop, 0, sizeof(sideband_crop));
     DrmOutput *output= &mOutputs[device];
@@ -495,11 +508,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     src_h = height;
     //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
     ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
-    ALOGV("\n mDrmFd=%d \n", mDrmFd);
-    ALOGV("\n plane_id=%d \n", plane_id);
-    ALOGV("\n output->crtc->crtc_id=%d \n", output->crtc->crtc_id);
-    ALOGV("\n fb_id=%d \n", fb_id);
-    ALOGV("\n flags=%d \n", flags);
+    ALOGV("mDrmFd=%d plane_id=%d output->crtc->crtc_id=%d fb_id=%d flags=%d", mDrmFd, plane_id, output->crtc->crtc_id, fb_id, flags);
     if (plane_id > 0) {
         ret = drmModeSetPlane(mDrmFd, plane_id,
                           output->crtc->crtc_id, fb_id, flags,
@@ -512,6 +521,127 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     }
     ALOGV("%s end.", __FUNCTION__);
     return true;
+}
+
+bool DrmVopRender::ClearDrmPlaneContent(int device, int32_t width, int32_t height)
+{
+    ALOGD("%s come in, device=%d", __FUNCTION__, device);
+    bool ret = true;
+    int plane_id = 0;//FindSidebandPlane(device);
+    // drmModeAtomicReqPtr reqPtr = drmModeAtomicAlloc();
+    DrmOutput *output= &mOutputs[device];
+    drmModePlanePtr plane;
+    drmModeObjectPropertiesPtr props;
+    drmModePropertyPtr prop;
+    props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+
+    for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
+        plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
+        props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
+        if (!props) {
+            ALOGE("Failed to found props plane[%d] %s\n",plane->plane_id, strerror(errno));
+           return -ENODEV;
+        }
+        for (uint32_t j = 0; j < props->count_props; j++) {
+            prop = drmModeGetProperty(mDrmFd, props->props[j]);
+            if (!strcmp(prop->name, "ASYNC_COMMIT")) {
+                if (props->prop_values[j] != 0) {
+                    plane_id = plane->plane_id;
+                    // ret = drmModeAtomicAddProperty(reqPtr, plane_id, prop->prop_id, 0) < 0;
+                    ret =  drmModeObjectSetProperty(mDrmFd, plane_id, 0, prop->prop_id, 0) < 0;
+                    if (ret) {
+                        ALOGE("drmModeObjectSetProperty failed");
+                        drmModeFreeProperty(prop);
+                        // drmModeAtomicFree(reqPtr);
+                        return false;
+                    } else {
+                        ALOGD("drmModeObjectSetProperty successful.");
+                    }
+                    break;
+                }
+            }
+            if (prop)
+                drmModeFreeProperty(prop);
+        }
+        if(props)
+            drmModeFreeObjectProperties(props);
+        if(plane)
+            drmModeFreePlane(plane);
+    }
+    prop = NULL;
+
+
+/*
+    for (uint32_t i = 0; i < props->count_props; i++) {
+        prop = drmModeGetProperty(mDrmFd, props->props[i]);
+        ALOGD("%s prop->name=%s", __FUNCTION__, prop->name);
+        if (!strcmp(prop->name, "CRTC_ID")) {
+            // ret = drmModeAtomicAddProperty(reqPtr, plane_id, prop->prop_id, 0) < 0;
+            ret =  drmModeObjectSetProperty(mDrmFd, plane_id, 0, prop->prop_id, 0) < 0;
+            if (ret) {
+                ALOGE("drmModeAtomicAddProperty failed");
+                drmModeFreeProperty(prop);
+                // drmModeAtomicFree(reqPtr);
+                return false;
+            }
+        }
+        if (!strcmp(prop->name, "FB_ID")) {
+            // ret = drmModeAtomicAddProperty(reqPtr, plane_id, prop->prop_id, 0) < 0;
+            ret =  drmModeObjectSetProperty(mDrmFd, plane_id, 0, prop->prop_id, 0) < 0;
+            if (ret) {
+                ALOGE("drmModeAtomicAddProperty failed");
+                drmModeFreeProperty(prop);
+                // drmModeAtomicFree(reqPtr);
+                return false;
+            }
+        }
+    }
+    drmModeFreeProperty(prop);
+    drmModeAtomicFree(reqPtr);
+    prop = NULL;
+*/
+    /*int ret = 0;
+    int plane_id = FindSidebandPlane(device);
+    int flags = 0;
+    int src_left = 0;
+    int src_top = 0;
+    int src_right = 0;
+    int src_bottom = 0;
+    int dst_left = 0;
+    int dst_top = 0;
+    int dst_right = 0;
+    int dst_bottom = 0;
+    int src_w = 0;
+    int src_h = 0;
+    int dst_w = 0;
+    int dst_h = 0;
+    char sideband_crop[PROPERTY_VALUE_MAX];
+    memset(sideband_crop, 0, sizeof(sideband_crop));
+    DrmOutput *output= &mOutputs[device];
+    int length = property_get("vendor.hwc.sideband.crop", sideband_crop, NULL);
+    if (length > 0) {
+       sscanf(sideband_crop, "%d-%d-%d-%d-%d-%d-%d-%d",\
+              &src_left, &src_top, &src_right, &src_bottom,\
+              &dst_left, &dst_top, &dst_right, &dst_bottom);
+       dst_w = dst_right - dst_left;
+       dst_h = dst_bottom - dst_top;
+    } else {
+       dst_w = output->crtc->width;
+       dst_h = output->crtc->height;
+    }
+    src_w = width;
+    src_h = height;
+    if (plane_id > 0) {
+        ret = drmModeSetPlane(mDrmFd, plane_id,
+                          0, 0, flags,
+                          dst_left, dst_top,
+                          dst_w, dst_h,
+                          0, 0,
+                          src_w << 16, src_h << 16);
+        ALOGV("drmModeSetPlane ret=%s", strerror(ret));
+
+    }*/
+    return ret;
 }
 
 int DrmVopRender::getOutputIndex(int device)

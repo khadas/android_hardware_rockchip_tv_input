@@ -16,7 +16,7 @@ using android::NO_ERROR;
 //                          PUBLIC METHODS
 ////////////////////////////////////////////////////////////////////
 
-V4L2DeviceEvent::V4L2DeviceEvent(int fd):mFd(fd)
+V4L2DeviceEvent::V4L2DeviceEvent()
 {
 }
 
@@ -27,9 +27,10 @@ V4L2DeviceEvent::~V4L2DeviceEvent()
         ALOGW("Destroying a device object not closed, closing first");
     }
 }
-int V4L2DeviceEvent::initialize(){
-    subscribeEvent(V4L2_EVENT_SOURCE_CHANGE) ;
-    subscribeEvent(V4L2_EVENT_MOTION_DET) ;
+int V4L2DeviceEvent::initialize(int fd){
+    mFd = fd;
+    subscribeEvent(V4L2_EVENT_SOURCE_CHANGE);
+    subscribeEvent(V4L2_EVENT_MOTION_DET);
 
     mV4L2EventThread = new V4L2EventThread(mFd,callback_);
     mV4L2EventThread->v4l2pipe();
@@ -328,6 +329,8 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
         mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
         mCurformat->setFormatWeight(formatSize->getFormatWeight());
         mCurformat->setFormatHeight(formatSize->getFormatHeight());
+    } else if (formatSize->getIsHdmiIn() == 0) {
+        mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     }
     usleep(200*1000);   
 #endif
