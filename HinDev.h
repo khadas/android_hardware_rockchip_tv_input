@@ -21,8 +21,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <utils/threads.h>
-#include <android/native_window.h>
-#include <system/window.h>
 #include <hardware/gralloc.h>
 #include <hardware/tv_input.h>
 #include <map>

@@ -19,9 +19,13 @@
 #define _TVINPUT_HAL_UTILS_H_
 
 #include "hardware/hardware.h"
+#if defined(ANDROID_VERSION_ABOVE_12_X)
+#include <hardware/hardware_rockchip.h>
+#endif
 #include <linux/videodev2.h>
 #include <utils/Log.h>
 #include <cutils/properties.h>
+#include <hardware/hardware_rockchip.h>
 
 #define HIN_DEV_NODE_MAIN "/dev/video0"
 #define HIN_DEV_NODE_OTHERS "/dev/video1"

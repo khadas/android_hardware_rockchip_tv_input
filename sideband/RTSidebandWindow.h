@@ -21,7 +21,7 @@
 #ifndef ROCKIT_OSAL_RTSIDEBANDWINDOW_H_
 #define ROCKIT_OSAL_RTSIDEBANDWINDOW_H_
 
-#include "TvInput_Buffer_Manager_gralloc4_impl.h"
+#include "common/TvInput_Buffer_Manager_gralloc4_impl.h"
 #include <cutils/native_handle.h>
 #include <utils/RefBase.h>
 #include <hardware/hardware.h>
@@ -37,7 +37,7 @@
 #include <sys/types.h>
 #include <inttypes.h>
 #include "rt_type.h"   // NOLINT
-#include "Utils.h"
+#include "common/Utils.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG

@@ -79,7 +79,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     }
 #endif
 
-    return 0;
+    return err;
 __FAILED:
     return -1;
 }

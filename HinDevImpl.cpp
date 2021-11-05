@@ -40,8 +40,8 @@
 #define ALIGN_32(x) ((x + (BOUNDRY) - 1)& ~((BOUNDRY) - 1))
 #define ALIGN(b,w) (((b)+((w)-1))/(w)*(w))
 
-static int sNewFrameWidth = DEFAULT_V4L2_STREAM_WIDTH;
-static int sNewFrameHeight = DEFAULT_V4L2_STREAM_HEIGHT;
+//static int sNewFrameWidth = DEFAULT_V4L2_STREAM_WIDTH;
+//static int sNewFrameHeight = DEFAULT_V4L2_STREAM_HEIGHT;
 
 static size_t getBufSize(int format, int width, int height)
 {

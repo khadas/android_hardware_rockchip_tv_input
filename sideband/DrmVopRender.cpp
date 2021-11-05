@@ -7,8 +7,8 @@
 #include <sys/mman.h>
 #include <cutils/properties.h>
 
-#include "TvInput_Buffer_Manager.h"
-#include "Utils.h"
+#include "common/TvInput_Buffer_Manager.h"
+#include "common/Utils.h"
 
 #define HAS_ATOMIC 1
 

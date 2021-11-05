@@ -11,8 +11,8 @@
 #include <cutils/log.h>
 #include <ui/GraphicBufferMapper.h>
 #include <ui/GraphicBuffer.h>
-#include <gralloc_priv.h>
-#include <gralloc_helper.h>
+//#include <gralloc_priv.h>
+//#include <gralloc_helper.h>
 
 #include <linux/videodev2.h>
 #include <android/native_window.h>
