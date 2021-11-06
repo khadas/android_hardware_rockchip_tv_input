@@ -130,6 +130,9 @@ class EXPORTED TvInputBufferManager {
   //    0 on success; corresponding error code on failure.
   virtual int Deregister(buffer_handle_t buffer) = 0;
 
+  virtual int ImportBufferImpl(buffer_handle_t rawHandle,
+                                      buffer_handle_t* outBufferHandle) = 0;
+
   // This method is analogous to the lock() function in Android gralloc module.
   // Here the buffer handle is mapped with the given args.
   //

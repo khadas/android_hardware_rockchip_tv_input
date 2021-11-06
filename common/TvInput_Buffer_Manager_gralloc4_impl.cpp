@@ -442,7 +442,7 @@ status_t TvInputBufferManagerImpl::importBuffer(buffer_handle_t rawHandle,
 }
 
 status_t TvInputBufferManagerImpl::freeBuffer(buffer_handle_t bufferHandle) const {
-    ALOGD("freeBuffer %p", bufferHandle);
+    ALOGV("freeBuffer %p", bufferHandle);
     auto buffer = const_cast<native_handle_t*>(bufferHandle);
     auto &mapper = get_mapperservice();
     auto ret = mapper.freeBuffer(buffer);
@@ -480,7 +480,7 @@ int TvInputBufferManagerImpl::Free(buffer_handle_t buffer) {
 
     auto context_it = buffer_context_.find(buffer);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", buffer);
+        ALOGE("Failed Unknown buffer %p", buffer);
         return -EINVAL;
     }
 
@@ -509,7 +509,7 @@ int TvInputBufferManagerImpl::Free(buffer_handle_t buffer) {
 }
 
 int TvInputBufferManagerImpl::Register(buffer_handle_t buffer, buffer_handle_t* outbuffer) {
-    ALOGD("Register buffer:%p", buffer);
+    ALOGV("Register buffer:%p", buffer);
     auto context_it = buffer_context_.find(buffer);
     if (context_it != buffer_context_.end()) {
         context_it->second->usage++;
@@ -522,7 +522,7 @@ int TvInputBufferManagerImpl::Register(buffer_handle_t buffer, buffer_handle_t* 
 
     int ret = importBuffer(buffer, outbuffer);
 
-    ALOGD("after register buffer:%p outbufferptr:%p outbuffer:%p", buffer, outbuffer, *outbuffer);
+    ALOGV("after register buffer:%p outbufferptr:%p outbuffer:%p", buffer, outbuffer, *outbuffer);
 
     if (ret) {
         ALOGE("Failed to register gralloc buffer");
@@ -531,17 +531,17 @@ int TvInputBufferManagerImpl::Register(buffer_handle_t buffer, buffer_handle_t* 
     
     buffer_context->usage = 1;
     buffer_context_[*outbuffer] = std::move(buffer_context);
-    ALOGD("Register buffer ok");
+    ALOGV("Register buffer ok");
 
     return 0;
 }
 
 int TvInputBufferManagerImpl::Deregister(buffer_handle_t buffer) {
-    ALOGD("Deregister %p", buffer);
+    ALOGV("Deregister %p", buffer);
 
     auto context_it = buffer_context_.find(buffer);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", buffer);
+        ALOGE("Failed Unknown buffer %p", buffer);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
@@ -564,6 +564,10 @@ int TvInputBufferManagerImpl::Deregister(buffer_handle_t buffer) {
     }
 }
 
+int TvInputBufferManagerImpl::ImportBufferImpl(buffer_handle_t buffer, buffer_handle_t* outbuffer) {
+    return importBuffer(buffer, outbuffer);
+}
+
 int TvInputBufferManagerImpl::Lockinternal(buffer_handle_t bufferHandle,
                                   uint32_t flags,
                                   uint32_t x,
@@ -575,7 +579,7 @@ int TvInputBufferManagerImpl::Lockinternal(buffer_handle_t bufferHandle,
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", bufferHandle);
+        ALOGE("Failed Unknown buffer %p", bufferHandle);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
@@ -625,7 +629,7 @@ int TvInputBufferManagerImpl::Unlockinternal(buffer_handle_t bufferHandle) {
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", bufferHandle);
+        ALOGE("Failed Unknown buffer %p", bufferHandle);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
@@ -683,7 +687,7 @@ int TvInputBufferManagerImpl::Lock(buffer_handle_t bufferHandle,
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", bufferHandle);
+        ALOGE("Failed Unknown buffer %p", bufferHandle);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
@@ -743,7 +747,7 @@ int TvInputBufferManagerImpl::LockYCbCr(buffer_handle_t buffer,
 
     auto context_it = buffer_context_.find(buffer);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", buffer);
+        ALOGE("Failed Unknown buffer %p", buffer);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
@@ -866,14 +870,14 @@ int TvInputBufferManagerImpl::Unlock(buffer_handle_t bufferHandle) {
 
     auto context_it = buffer_context_.find(bufferHandle);
     if (context_it == buffer_context_.end()) {
-        ALOGE("Unknown buffer %p", bufferHandle);
+        ALOGE("Failed Unknown buffer %p", bufferHandle);
         return -EINVAL;
     }
     auto buffer_context = context_it->second.get();
     if (buffer_context->type == GRALLOC) {
         auto &mapper = get_mapperservice();
         auto buffer = const_cast<native_handle_t*>(bufferHandle);
-        ALOGD("Unlock buffer:%p", buffer);
+        ALOGV("Unlock buffer:%p", buffer);
 
         int releaseFence = -1;
         Error error;

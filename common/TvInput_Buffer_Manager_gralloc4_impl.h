@@ -67,6 +67,7 @@ public:
     int Free(buffer_handle_t buffer) final;
     int Register(buffer_handle_t buffer, buffer_handle_t* outbuffer) final;
     int Deregister(buffer_handle_t buffer) final;
+    int ImportBufferImpl(buffer_handle_t buffer, buffer_handle_t* outbuffer) final;
     int Lock(buffer_handle_t buffer,
              uint32_t flags,
              uint32_t x,

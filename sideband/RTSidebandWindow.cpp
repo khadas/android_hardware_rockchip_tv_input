@@ -338,13 +338,97 @@ int RTSidebandWindow::getBufferLength(buffer_handle_t buffer) {
     return mBuffMgr->GetHandleBufferSize(buffer);
 }
 
+int RTSidebandWindow::importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle) {
+    ALOGD("%s rawBuffer :%p", __FUNCTION__, rawHandle);
+    if (rawHandle) {
+        if(!mBuffMgr->ImportBufferImpl(rawHandle, outBufferHandle)) {
+            return getBufferHandleFd(*outBufferHandle);
+        } else {
+            ALOGE("%s ImportBufferImpl failed.", __FUNCTION__);
+        }
+    }
+    return -1;
+}
+static bool writeOutBuffData = false;
+int RTSidebandWindow::buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle) {
+    if (srcHandle && dstRawHandle) {
+        buffer_handle_t outBufferHandle = NULL;
+        void *tmpSrcPtr = NULL, *tmpDstPtr = NULL;
+        int srcDatasize = -1;
+        if(!mBuffMgr->Register(dstRawHandle, &outBufferHandle)) {
+            ALOGV("dst buffer handle fd = %d", mBuffMgr->GetHandleFd(outBufferHandle));
+            int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+            mBuffMgr->Lock(srcHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcHandle), mBuffMgr->GetHeight(srcHandle), &tmpSrcPtr);
+            for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
+                srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
+            }
+
+            mBuffMgr->Lock(outBufferHandle, lockMode, 0, 0, mBuffMgr->GetWidth(outBufferHandle), mBuffMgr->GetHeight(outBufferHandle), &tmpDstPtr);
+
+            std::memcpy(tmpDstPtr, tmpSrcPtr, srcDatasize);
+if (!writeOutBuffData) {
+    writeOutBuffData = true;
+    FILE* fp = NULL;
+    char fileName[128] = "/data/system/tv_input_result_dump.yuv";
+    fp = fopen(fileName, "wb+");
+    if (fp != NULL) {
+        if (fwrite(tmpDstPtr, srcDatasize, 1, fp) <= 0) {
+            ALOGE("fwrite %s failed.", fileName);
+        }
+    }
+    fclose(fp);
+}
+            mBuffMgr->Unlock(srcHandle);
+            mBuffMgr->Unlock(outBufferHandle);
+            mBuffMgr->Deregister(outBufferHandle);
+            ALOGV("%s end", __FUNCTION__);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int RTSidebandWindow::registerHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle) {
+    ALOGD("%s rawBuffer :%p", __FUNCTION__, rawHandle);
+    if (rawHandle) {
+        if(!mBuffMgr->Register(rawHandle, outBufferHandle)) {
+            return getBufferHandleFd(*outBufferHandle);
+        } else {
+            ALOGE("%s ImportBufferImpl failed.", __FUNCTION__);
+        }
+    }
+    return -1;
+}
+
+void RTSidebandWindow::getBufferDataLocked(buffer_handle_t srcBufferHandle, void** dstDataPtr, int *dstDataSize) {
+    void *tmpPtr = NULL;
+    int size = -1;
+    int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+    mBuffMgr->Lock(srcBufferHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcBufferHandle), mBuffMgr->GetHeight(srcBufferHandle), &tmpPtr);
+    for (int i = 0; i < mBuffMgr->GetNumPlanes(srcBufferHandle); i++) {
+        size += mBuffMgr->GetPlaneSize(srcBufferHandle, i);
+    }
+    *dstDataPtr = tmpPtr;
+    *dstDataSize = size;
+    if (*dstDataPtr) {
+        ALOGD("%s ptr=%p, dataSize=%d", __FUNCTION__, *dstDataPtr, *dstDataSize);
+    } else {
+        ALOGE("%s failed", __FUNCTION__);
+    }
+}
+
+void RTSidebandWindow::unLockBufferHandle(buffer_handle_t srcBufferHandle) {
+    mBuffMgr->Unlock(srcBufferHandle);
+}
+
 int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode) {
     int ret = -1;
     if (!handle || !fileName) {
         DEBUG_PRINT(3, "%s param buffer is NULL.", __FUNCTION__);
         return ret;
     }
-    FILE* fp =NULL;
+    ALOGD("%s handle :%p", __FUNCTION__, handle);
+    FILE* fp = NULL;
     void *dataPtr = NULL;
     int dataSize = 0;
     fp = fopen(fileName, "wb+");
@@ -355,15 +439,27 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode
             mBuffMgr->LockYCbCr(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &ycbrData);
             dataPtr = ycbrData.y;
         } else {
+            ALOGD("width = %d", mBuffMgr->GetWidth(handle));
+            ALOGD("height = %d", mBuffMgr->GetHeight(handle));
             mBuffMgr->Lock(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &dataPtr);
         }
+        ALOGD("planesNum = %d", mBuffMgr->GetNumPlanes(handle));
         for (int i = 0; i < mBuffMgr->GetNumPlanes(handle); i++) {
+        ALOGD("planesSize = %zu", mBuffMgr->GetPlaneSize(handle, i));
             dataSize += mBuffMgr->GetPlaneSize(handle, i);
         }
-        fwrite(dataPtr, dataSize, 1, fp);
+        if (dataSize <= 0) {
+            ALOGE("dataSize <= 0 , it can't write file.");
+            ret = -1;
+        } else {
+            if (fwrite(dataPtr, dataSize, 1, fp) <= 0) {
+                ALOGE("fwrite %s failed.", fileName);
+                ret = -1;
+            }
+        }
         fclose(fp);
         mBuffMgr->Unlock(handle);
-        ALOGI("Write success h264 data to %s",fileName);
+        ALOGI("Write data success to %s",fileName);
         ret = 0;
     } else {
         DEBUG_PRINT(3, "Create %s failed(%p, %s)", fileName, fp, strerror(errno));

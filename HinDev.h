@@ -28,6 +28,8 @@
 #include "TvDeviceV4L2Event.h"
 #include "sideband/RTSidebandWindow.h"
 #include "common/Utils.h"
+#include "common/RgaCropScale.h"
+#include "common/HandleImporter.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -72,8 +74,8 @@ enum State{
 };
 
 enum FrameType{
-    NATIVE_WINDOW_DATA = 0x1,
-    CALL_BACK_DATA = 0x2,
+    TYPF_SIDEBAND_WINDOW = 0x1,
+    TYPE_NATIVE_WINDOW_DATA = 0x2,
 };
 
 typedef void (*olStateCB)(int state);
@@ -85,11 +87,16 @@ typedef void (*app_data_callback)(void *user, source_buffer_info_t *buff_info);
                                     GRALLOC_USAGE_SW_READ_RARELY | \
                                     GRALLOC_USAGE_SW_WRITE_NEVER
 
+#ifndef container_of
+#define container_of(ptr, type, member) \
+    (type *)((char*)(ptr) - offsetof(type, member))
+#endif
+
 class HinDevImpl {
     public:
         HinDevImpl();
         ~HinDevImpl();
-        int init(int id, int width, int height);
+        int init(int id, int width, int height, int type);
         int start();
         int stop();
         int pause();
@@ -99,6 +106,7 @@ class HinDevImpl {
         int set_crop(int x, int y, int width, int height);
         int get_hin_crop(int *x, int *y, int *width, int *height);
         int set_hin_crop(int x, int y, int width, int height);
+        int set_preview_window(ANativeWindow* window);
         int aquire_buffer();
         // int inc_buffer_refcount(int* ptr);
         int release_buffer();
@@ -111,6 +119,8 @@ class HinDevImpl {
         int stop_device();
         int set_mode(int display_mode);
         buffer_handle_t getSindebandBufferHandle();
+        int requestOneGrahicsBufferData(buffer_handle_t rawHandle);
+        void releaseOneGraphicsBuffer(int bufferHandleIndex);
 
         const tv_input_callback_ops_t* mTvInputCB;
     private:

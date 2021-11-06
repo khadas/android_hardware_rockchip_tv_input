@@ -25,6 +25,8 @@ LOCAL_CFLAGS += -Wno-unused-parameter -Wno-uninitialized -Wno-unused-variable -W
 
 LOCAL_SRC_FILES := \
     common/TvInput_Buffer_Manager_gralloc4_impl.cpp \
+    common/RgaCropScale.cpp \
+    common/HandleImporter.cpp \
     sideband/RTSidebandWindow.cpp \
     sideband/DrmVopRender.cpp \
     sideband/MessageThread.cpp \
@@ -40,11 +42,13 @@ LOCAL_SHARED_LIBRARIES := \
     libui \
     liblog \
     libdrm \
-    libhardware
+    libhardware \
+    librga
 
 LOCAL_C_INCLUDES += \
     system/core/libion/include \
     system/core/libion/kernel-headers \
+    system/libhidl/transport/token/1.0/utils/include \
     hardware/libhardware/include \
     hardware/libhardware/include/hardware \
     system/core/libutils/include \
@@ -52,9 +56,11 @@ LOCAL_C_INCLUDES += \
     hardware/rockchip/libgralloc/bifrost \
     hardware/rockchip/libgralloc/bifrost/src \
     hardware/rockchip/hdmi_capture \
+    frameworks/native/include/gui \
     frameworks/native/libs/nativewindow/include \
     $(LOCAL_PATH)/common \
-    $(LOCAL_PATH)/sideband
+    $(LOCAL_PATH)/sideband \
+    hardware/rockchip/librga \
 
 LOCAL_STATIC_LIBRARIES += \
        libgrallocusage
@@ -63,6 +69,8 @@ LOCAL_SHARED_LIBRARIES += \
     android.hardware.graphics.allocator@2.0 \
     android.hardware.graphics.allocator@3.0 \
     android.hardware.graphics.allocator@4.0 \
+    android.hardware.graphics.bufferqueue@1.0 \
+    android.hardware.graphics.bufferqueue@2.0 \
     android.hardware.graphics.common@1.2 \
     android.hardware.graphics.mapper@2.0 \
     android.hardware.graphics.mapper@2.1 \
@@ -70,7 +78,7 @@ LOCAL_SHARED_LIBRARIES += \
     android.hardware.graphics.mapper@4.0 \
     libgralloctypes \
     libhidlbase \
-    libsync_vendor
+    libsync
 
 LOCAL_HEADER_LIBRARIES += \
     android.hardware.graphics.common@1.2 \
