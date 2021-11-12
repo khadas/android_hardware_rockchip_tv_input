@@ -435,7 +435,6 @@ status_t TvInputBufferManagerImpl::importBuffer(buffer_handle_t rawHandle,
             return;
         }
         *outBufferHandle = static_cast<buffer_handle_t>(tmpBuffer);
-        ALOGV("import outBuffer :%p", outBufferHandle);
     });
 
     return static_cast<status_t>((ret.isOk()) ? error : kTransactionError);
@@ -522,7 +521,7 @@ int TvInputBufferManagerImpl::Register(buffer_handle_t buffer, buffer_handle_t* 
 
     int ret = importBuffer(buffer, outbuffer);
 
-    ALOGV("after register buffer:%p outbufferptr:%p outbuffer:%p", buffer, outbuffer, *outbuffer);
+    ALOGD("after register buffer:%p outbufferptr:%p *outbuffer:%p", buffer, outbuffer, *outbuffer);
 
     if (ret) {
         ALOGE("Failed to register gralloc buffer");
@@ -736,6 +735,60 @@ int TvInputBufferManagerImpl::Lock(buffer_handle_t bufferHandle,
     return 0;
 }
 
+
+int TvInputBufferManagerImpl::LockLocked(buffer_handle_t bufferHandle,
+                                  uint32_t flags,
+                                  uint32_t x,
+                                  uint32_t y,
+                                  uint32_t width,
+                                  uint32_t height,
+                                  void** out_addr) {
+    ALOGV("lock buffer:%p   %d, %d, %d, %d, %d", bufferHandle, x, y,width, height, flags);
+
+    uint32_t num_planes = GetNumPlanes(bufferHandle);
+    if (!num_planes) {
+        return -EINVAL;
+    }
+    if (num_planes > 2) {
+        ALOGE("Lock called on multi-planar buffer %p", bufferHandle);
+        return -EINVAL;
+    }
+
+    if (true) {
+        auto &mapper = get_mapperservice();
+        auto buffer = const_cast<native_handle_t*>(bufferHandle);
+        ALOGV("lock buffer:%p", &buffer);
+
+        IMapper::Rect accessRegion = {(int)x, (int)y, (int)width, (int)height};
+
+        android::hardware::hidl_handle acquireFenceHandle; // dummy
+
+        Error error;
+        auto ret = mapper.lock(buffer,
+                               flags,
+                               accessRegion,
+                               acquireFenceHandle,
+                               [&](const auto& tmpError, const auto& tmpData) {
+                                    error = tmpError;
+                                    if (error != Error::NONE) {
+                                        return;
+                                    }
+                                    *out_addr = tmpData;
+                               });
+
+        error = (ret.isOk()) ? error : kTransactionError;
+
+        ALOGE_IF(error != Error::NONE, "lock(%p, ...) failed: %d", bufferHandle, error);
+
+        return (int)error;
+    } else {
+        ALOGE("Invalid buffer type");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
 int TvInputBufferManagerImpl::LockYCbCr(buffer_handle_t buffer,
                                        uint32_t flags,
                                        uint32_t x,
@@ -918,6 +971,57 @@ int TvInputBufferManagerImpl::Unlock(buffer_handle_t bufferHandle) {
 }
 
 
+int TvInputBufferManagerImpl::UnlockLocked(buffer_handle_t bufferHandle) {
+    ALOGV("Unlock buffer:%p", bufferHandle);
+
+    if (true) {
+        auto &mapper = get_mapperservice();
+        auto buffer = const_cast<native_handle_t*>(bufferHandle);
+        ALOGV("Unlock buffer:%p", buffer);
+
+        int releaseFence = -1;
+        Error error;
+        auto ret = mapper.unlock(buffer,
+                                 [&](const auto& tmpError, const auto& tmpReleaseFence)
+                                 {
+            error = tmpError;
+            if (error != Error::NONE) {
+                return;
+            }
+
+            auto fenceHandle = tmpReleaseFence.getNativeHandle(); // 预期 unlock() 不会返回有效的 release_fence.
+            if (fenceHandle && fenceHandle->numFds == 1)
+            {
+                ALOGE("got unexpected valid fd of release_fence : %d", fenceHandle->data[0]);
+
+                int fd = dup(fenceHandle->data[0]);
+                if (fd >= 0) {
+                    releaseFence = fd;
+                } else {
+                    ALOGE("failed to dup unlock release fence");
+                    sync_wait(fenceHandle->data[0], -1);
+                }
+            }
+                                 });
+
+        if (!ret.isOk()) {
+            error = kTransactionError;
+        }
+
+        if (error != Error::NONE) {
+            ALOGE("unlock(%p) failed with %d", bufferHandle, error);
+        }
+
+        if (bufferHandle) {
+            freeBuffer(bufferHandle);           
+            buffer = nullptr;
+        }
+
+    }
+
+    return 0;
+}
+
 int TvInputBufferManagerImpl::FlushCache(buffer_handle_t buffer) {
     int fd = -1;
 
@@ -963,7 +1067,6 @@ int TvInputBufferManagerImpl::GetBufferId(buffer_handle_t buffer) {
 
 int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
     int fd = -1;
-
     auto &mapper = get_mapperservice();
     std::vector<int64_t> fds;
 
@@ -976,7 +1079,7 @@ int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
     assert (fds.size() > 0);
 
     fd = (int)(fds[0]);
-    ALOGV("GetHandleFd buffer:%p, fd = %d.", buffer, fd);
+    ALOGD("GetHandleFd buffer:%p, fd = %d.", buffer, fd);
 
     return fd;
 }

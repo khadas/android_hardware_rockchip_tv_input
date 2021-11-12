@@ -245,10 +245,12 @@ int HinDevImpl::init(int id, int initWidth, int initHeight, int initType) {
     mFrameWidth = initWidth;
     mFrameHeight = initHeight;
     mBufferSize = mFrameWidth * mFrameHeight * 3/2;
-    mSetStateCB = NULL;
+    mNotifyQueueCb = NULL;
     mState = STOPED;
     mANativeWindow = NULL;
     mWorkThread = NULL;
+    mPreviewThreadRunning = false;
+    mPreviewBuffThread = NULL;
     mTvInputCB = NULL;
     mOpen = false;
 
@@ -324,7 +326,7 @@ int HinDevImpl::start_device()
     DEBUG_PRINT(1, "VIDIOC_QUERYCAP device_caps=0x%08x", mHinNodeInfo->cap.device_caps);
 
     mHinNodeInfo->reqBuf.type = TVHAL_V4L2_BUF_TYPE;
-    mHinNodeInfo->reqBuf.memory = TVHAL_V4L2_BUF_MEMORY;
+    mHinNodeInfo->reqBuf.memory = TVHAL_V4L2_BUF_MEMORY_TYPE;
     mHinNodeInfo->reqBuf.count = mBufferCount;
 
     ret = ioctl(mHinDevHandle, VIDIOC_REQBUFS, &mHinNodeInfo->reqBuf);
@@ -397,7 +399,6 @@ int HinDevImpl::start()
         ALOGD("Create Work Thread");
         mWorkThread = new WorkThread(this);
     }
-
     mState = START;
     mOpen = true;
     ALOGD("%s %d ret:%d", __FUNCTION__, __LINE__, ret);
@@ -424,6 +425,11 @@ int HinDevImpl::stop()
         mWorkThread.clear();
         mWorkThread = NULL;
     }
+    if(mPreviewBuffThread != NULL){
+        mPreviewBuffThread->requestExit();
+        mPreviewBuffThread.clear();
+        mPreviewBuffThread = NULL;
+    }
     mState = STOPED;
     release_buffer();
 
@@ -446,13 +452,13 @@ int HinDevImpl::stop()
     return ret;
 }
 
-int HinDevImpl::set_state_callback(olStateCB callback)
+int HinDevImpl::set_preview_callback(NotifyQueueDataCallback callback)
 {
     if (!callback){
         DEBUG_PRINT(3, "NULL state callback pointer");
         return BAD_VALUE;
     }
-    mSetStateCB = callback;
+    mNotifyQueueCb = callback;
     return NO_ERROR;
 }
 
@@ -612,22 +618,35 @@ int HinDevImpl::set_hin_crop(int x, int y, int width, int height)
     return ret ;
 }
 
-int HinDevImpl::set_preview_window(ANativeWindow* window) {
+int HinDevImpl::set_preview_buffer(const tv_stream_preview_request_t request_buff) {
     ALOGD("%s %d", __FUNCTION__, __LINE__);
     if(mOpen == true) {
         ALOGE("%s thread has opened, can't set_preview_window.", __FUNCTION__);
         return UNKNOWN_ERROR;
     }
-    //can work without a valid window object ?
-    if (window == NULL){
-        ALOGE("%s param window is NULL, please check it.", __FUNCTION__);
-        return UNKNOWN_ERROR;
+    mPreviewRawHandle.resize(request_buff.input_buffers.size());
+    for (int i=0; i<request_buff.input_buffers.size(); i++) {
+        mPreviewRawHandle[i].isRendering = false;
+        mPreviewRawHandle[i].isFilled = false;
+        mPreviewRawHandle[i].bufferId = request_buff.input_buffers[i].bufferId;
+        mPreviewRawHandle[i].rawHandle = request_buff.input_buffers[i].buffer;
+        mPreviewRawHandle[i].outHandle = request_buff.input_buffers[i].buffer;
+        ALOGD("mPreviewRawHandle[%d].bufferId = %" PRIu64, i, mPreviewRawHandle[i].bufferId);
+        ALOGD("mPreviewRawHandle[%d].buff = %p", i, request_buff.input_buffers[i].buffer);
+        // buffer_handle_t tmp = NULL;
+        // ALOGD("buff fd = %d", mSidebandWindow->importHidlHandleBuffer(request_buff.input_buffers[i].buffer, &tmp));
+        // ALOGD("after import handle = %p", tmp);
     }
-    mFrameType |= TYPE_NATIVE_WINDOW_DATA;
-    mANativeWindow = window;
+
+    if (mPreviewRawHandle.size() > 0) {
+        ALOGD("mPreviewRawHandle.size = %d", (int)mPreviewRawHandle.size());
+        if (request_buff.width > 0) {
+            mSidebandWindow->setCrop(request_buff.left, request_buff.top, request_buff.width, request_buff.height);
+        }
+    }
+    
     return NO_ERROR;
 }
-
 
 int HinDevImpl::get_current_sourcesize(int *width,  int *height)
 {
@@ -668,7 +687,7 @@ int HinDevImpl::aquire_buffer()
 
         mHinNodeInfo->bufferArray[i].index = i;
         mHinNodeInfo->bufferArray[i].type = TVHAL_V4L2_BUF_TYPE;
-        mHinNodeInfo->bufferArray[i].memory = TVHAL_V4L2_BUF_MEMORY;
+        mHinNodeInfo->bufferArray[i].memory = TVHAL_V4L2_BUF_MEMORY_TYPE;
         if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
             mHinNodeInfo->bufferArray[i].m.planes = &mHinNodeInfo->planes[i];
             mHinNodeInfo->bufferArray[i].length = PLANES_NUM;
@@ -710,71 +729,39 @@ int HinDevImpl::release_buffer()
     }
     return -1;
 }
-bool writeData = false, writeOutBuffData = false;
-static int nNums = 0;
-int HinDevImpl::requestOneGrahicsBufferData(buffer_handle_t rawHandle) {
+
+int HinDevImpl::requestOneGrahicsBufferData(buffer_handle_t rawHandle, uint64_t bufferId) {
     int ret;
     int bufferIndex = -1;
 
-    if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
-        mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
-
-    ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
-    if (ret < 0) {
-        DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
-        return -1;
-    } else {
-        DEBUG_PRINT(mDebugLevel, "VIDIOC_DQBUF successful.");
+    if (!mPreviewThreadRunning) {
+        ALOGD("Create PreviwBuff Thread");
+        mPreviewBuffThread = new PreviewBuffThread(this);
+        mPreviewThreadRunning = true;
+        bRequestBegin = true;
+        return 0;
     }
 
-//     unsigned char *dest = NULL;
-//     void *dstDataPtr = NULL;
-//     int dstDataSize = -1;
-//     buffer_handle_t outBufferHandlePtr = NULL;
-//     // int handle_fd = mSidebandWindow->importHidlHandleBuffer(rawHandle, &outBufferHandlePtr);
-//     int handle_fd = mSidebandWindow->registerHidlHandleBuffer(rawHandle, &outBufferHandlePtr);
-//     ALOGD("%s outBufferHandlePtr = %p, handle_fd=%d", __FUNCTION__, outBufferHandlePtr, handle_fd);
-//     if (!outBufferHandlePtr || handle_fd == -1) {
-//         ALOGD("importHandleBuffer FAILED!!!");
-//         return -1;
-//     }
-//     mSidebandWindow->getBufferDataLocked(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], &dstDataPtr, &dstDataSize);
-//     if (dstDataPtr == NULL) {
-//         ALOGE("%s failed", __FUNCTION__);
-//         return -1;
-//     }
-//     unsigned long vir_addr =  reinterpret_cast<unsigned long>(dstDataPtr);
-//     tvinput::RgaCropScale::rga_nv12_scale_crop(
-//         1920, 1080, vir_addr, handle_fd,
-//         1920, 1080, 100, false, true,
-//         false, true,
-//         true);
+        ALOGD("rawHandle = %p, bufferId=%" PRIu64, rawHandle, bufferId);
+    for (int i=0; i<mPreviewRawHandle.size(); i++) {
+        // if (mPreviewRawHandle[i].rawHandle == rawHandle) {
+        if (mPreviewRawHandle[i].bufferId == bufferId) {
+            if (mPreviewRawHandle[i].isFilled) {
+                mPreviewRawHandle[i].isRendering = false;
+                mPreviewRawHandle[i].isFilled = false;
+            }
+        }
+    }
 
-// if (!writeOutBuffData) {
-//     writeOutBuffData = true;
-//     char fileName[128] = {0};
-//     sprintf(fileName, "/data/system/tv_input_result_dump_%dx%d_%d.yuv", mFrameWidth, mFrameHeight, nNums);
-//     mSidebandWindow->dumpImage(outBufferHandlePtr, fileName, 0);
-//     nNums++;
-// }
-
-    mSidebandWindow->buffCopy(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], rawHandle);
     ALOGV("%s end.", __FUNCTION__);
     return mHinNodeInfo->currBufferHandleIndex;
 }
 
-void HinDevImpl::releaseOneGraphicsBuffer(int bufferHandleIndex) {
-    int ret;
-    if (bufferHandleIndex == -1)
-        bufferHandleIndex = mHinNodeInfo->currBufferHandleIndex;
-    // mSidebandWindow->unLockBufferHandle(mHinNodeInfo->buffer_handle_poll[bufferHandleIndex]);
-    ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[bufferHandleIndex]);
-    if (ret != 0) {
-        DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
-    } else {
-        DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF successful.");
-    }
-    mHinNodeInfo->currBufferHandleIndex++;
+void HinDevImpl::wrapCaptureResultAndNotify(uint64_t id, buffer_handle_t handle) {
+    tv_input_capture_result_t result;
+    result.buff_id = id;
+    result.buffer = handle;
+    mNotifyQueueCb(result);
 }
 
 int HinDevImpl::workThread()
@@ -843,4 +830,49 @@ void HinDevImpl::debugShowFPS() {
         DEBUG_PRINT(3, "tvinput: %d Frames, %2.3f FPS", mFrameCount, mFps);
     }
 }
+// static int currHandleIndex = -1;
+int HinDevImpl::previewBuffThread() {
+    int ret;
 
+    if (mState == START) {
+        if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
+             mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
+
+        DEBUG_PRINT(mDebugLevel, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
+ 
+        ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
+        if (ret < 0) {
+            DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
+            return -1;
+        } else {
+            DEBUG_PRINT(3, "VIDIOC_DQBUF successful.");
+        }
+
+        int currHandleIndex = -1;
+        if (bRequestBegin) {
+            for (int i=0; i<mPreviewRawHandle.size(); i++) {
+                if (!mPreviewRawHandle[i].isRendering) {
+                    mSidebandWindow->buffCopy(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[i].outHandle);
+                    mPreviewRawHandle[i].isFilled = true;
+                    currHandleIndex = i;
+                    break;
+                }
+            }
+            if (currHandleIndex >= 0) {
+                mPreviewRawHandle[currHandleIndex].isRendering = true;
+                wrapCaptureResultAndNotify(mPreviewRawHandle[currHandleIndex].bufferId, mPreviewRawHandle[currHandleIndex].outHandle);
+            } else {
+                wrapCaptureResultAndNotify(-1, NULL);
+            }
+            debugShowFPS();
+        }
+        ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
+        if (ret != 0) {
+            DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
+        } else {
+            DEBUG_PRINT(3, "VIDIOC_QBUF successful.");
+        }
+        mHinNodeInfo->currBufferHandleIndex++;
+    }
+    return NO_ERROR;
+}

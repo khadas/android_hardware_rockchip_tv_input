@@ -52,11 +52,19 @@ typedef struct tv_input_private {
     // Callback related data
     const tv_input_callback_ops_t* callback;
     HinDevImpl* mDev;
+    bool isInitialized;
 } tv_input_private_t;
 
+typedef struct tv_input_request_info {
+    int deviceId;
+    int streamId;
+    int seq;
+} tv_input_request_info_t;
+
 static tv_input_private_t *s_TvInputPriv;
-static int s_HinDevStreamWidth = 0;
-static int s_HinDevStreamHeight = 0;
+static tv_input_request_info_t requestInfo;
+static int s_HinDevStreamWidth = 1920;
+static int s_HinDevStreamHeight = 1080;
 
 //static unsigned int gHinDevOpened = 0;
 //static Mutex gHinDevOpenLock;
@@ -179,11 +187,19 @@ static int tv_input_get_stream_configurations(
         mconfig[0].type = TV_STREAM_TYPE_BUFFER_PRODUCER;
         mconfig[0].max_video_width = s_HinDevStreamWidth;
         mconfig[0].max_video_height = s_HinDevStreamHeight;
+        mconfig[0].format = DEFAULT_TVHAL_STREAM_FORMAT;
+        mconfig[0].width = 1920;
+        mconfig[0].height = 1080;
+        mconfig[0].buffCount = 4;
 
         mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
         mconfig[1].type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
         mconfig[1].max_video_width = s_HinDevStreamWidth;
         mconfig[1].max_video_height = s_HinDevStreamHeight;
+        mconfig[1].format = DEFAULT_TVHAL_STREAM_FORMAT;
+        mconfig[1].width = 1920;
+        mconfig[1].height = 1080;
+        mconfig[1].buffCount = 4;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
         break;
@@ -193,7 +209,7 @@ static int tv_input_get_stream_configurations(
     return 0;
 }
 
-static int hin_dev_open(int deviceId, tv_stream_t* stream)
+static int hin_dev_open(int deviceId, int type)
 {
     ALOGD("hin_dev_open");
     HinDevImpl* hinDevImpl = NULL;
@@ -214,14 +230,13 @@ static int hin_dev_open(int deviceId, tv_stream_t* stream)
             s_TvInputPriv->mDev = hinDevImpl;
             s_TvInputPriv->mDev->set_data_callback((V4L2EventCallBack)hinDevEventCallback);
             usleep(10*1000);
+            if (s_TvInputPriv->mDev->init(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight, type)!= 0) {
+                ALOGE("hinDevImpl->init %d failed!", deviceId);
+                delete s_TvInputPriv->mDev;
+                return -1;
+            }
+            s_TvInputPriv->isInitialized = true;
         }
-
-        if (s_TvInputPriv->mDev->init(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight, stream->type)!= 0) {
-            ALOGE("hinDevImpl->init %d failed!", deviceId);
-            delete s_TvInputPriv->mDev;
-            return -1;
-        }
-
     }
     return 0;
 }
@@ -231,9 +246,11 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
     ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->stream_id, stream->type);
     if (s_TvInputPriv) {
 
-        if (hin_dev_open(device_id, stream) < 0) {
-            ALOGD("Open hdmi failed!!!\n");
-            return -EINVAL;
+        if (!s_TvInputPriv->isInitialized){
+            if (hin_dev_open(device_id, stream->type) < 0) {
+                ALOGD("Open hdmi failed!!!\n");
+                return -EINVAL;
+            }
         }
 
         if (s_TvInputPriv->mDev) {
@@ -247,6 +264,8 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
                 width = s_HinDevStreamWidth;
                 height = s_HinDevStreamHeight;
             }
+        requestInfo.deviceId = device_id;
+        requestInfo.streamId = stream->stream_id;
 
             s_TvInputPriv->mDev->set_format(width, height, DEFAULT_V4L2_STREAM_FORMAT);
             s_TvInputPriv->mDev->set_crop(0, 0, width, height);
@@ -273,42 +292,30 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
     return -EINVAL;
 }
 
-static int notifyCaptureSucceeded(int device_id, int stream_id, uint32_t seq)
-{
-    ALOGV("%s in", __FUNCTION__);
+NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
+    ALOGD("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
     tv_input_event_t event;
-    event.type = TV_INPUT_EVENT_CAPTURE_SUCCEEDED;
-    event.capture_result.device_id = device_id;
-    event.capture_result.stream_id = stream_id;
-    event.capture_result.seq = seq;
-    s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
-    return 0;
-}
-
-static int notifyCaptureFail(int device_id, int stream_id, uint32_t seq)
-{
-    ALOGV("%s in", __FUNCTION__);
-    tv_input_event_t event;
-    event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
-    event.capture_result.device_id = device_id;
-    event.capture_result.stream_id = stream_id;
-    event.capture_result.seq = seq;
+    event.capture_result.device_id = requestInfo.deviceId;
+    event.capture_result.stream_id = requestInfo.streamId;
+    event.capture_result.seq = requestInfo.seq;
+    if (result.buff_id != -1) {
+        event.type = TV_INPUT_EVENT_CAPTURE_SUCCEEDED;
+        event.capture_result.buff_id = result.buff_id;
+        event.capture_result.buffer = result.buffer;
+    } else {
+        event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
+    }
     s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
     return 0;
 }
 
 static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
-            int stream_id, buffer_handle_t buffer, uint32_t seq) {
-    ALOGV("%s called", __func__);
+            int stream_id, uint64_t buff_id, buffer_handle_t buffer, uint32_t seq) {
+    ALOGD("%s called", __func__);
     if (s_TvInputPriv && s_TvInputPriv->mDev && buffer != nullptr) {
-        int bufferHandleIndex = s_TvInputPriv->mDev->requestOneGrahicsBufferData(buffer);
-        ALOGV("bufferHandleIndex = %d", bufferHandleIndex);
-        if (bufferHandleIndex == -1) {
-            notifyCaptureFail(device_id, stream_id, seq);
-            return -EINVAL; 
-        }
-        notifyCaptureSucceeded(device_id, stream_id, seq);
-        s_TvInputPriv->mDev->releaseOneGraphicsBuffer(bufferHandleIndex);
+        requestInfo.seq = seq;
+        s_TvInputPriv->mDev->set_preview_callback((NotifyQueueDataCallback)dataCallback);
+        s_TvInputPriv->mDev->requestOneGrahicsBufferData(buffer, buff_id);
         return 0;
     }
 
@@ -321,9 +328,17 @@ static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
     return -EINVAL;
 }
 
-static int tv_input_set_preview_buffer(struct tv_input_device*, buffer_handle_t buffer1, buffer_handle_t buffer2, buffer_handle_t buffer3, buffer_handle_t buffer4)
+static int tv_input_set_preview_buffer(struct tv_input_device* dev, int device_id,
+            const tv_stream_preview_request_t request_buff)
 {
     ALOGD("%s called", __func__);
+    if (!s_TvInputPriv->isInitialized) {
+        if (hin_dev_open(device_id, TV_STREAM_TYPE_BUFFER_PRODUCER) < 0) {
+            ALOGD("Open hdmi failed!!!\n");
+            return -EINVAL;
+        }
+    }
+    s_TvInputPriv->mDev->set_preview_buffer(request_buff);
     return -EINVAL;
 }
 
@@ -351,6 +366,7 @@ static int tv_input_initialize(struct tv_input_device* dev,
     }
     s_TvInputPriv = (tv_input_private_t*)dev;
 
+    s_TvInputPriv->isInitialized = false;
     s_TvInputPriv->callback = callback;
     
     findTvDevices(s_TvInputPriv);
@@ -381,7 +397,7 @@ static int tv_input_device_open(const struct hw_module_t* module,
                 tv_input_get_stream_configurations;
         dev->device.open_stream = tv_input_open_stream;
         dev->device.close_stream = tv_input_close_stream;
-        // dev->device.set_preview_buffer = tv_input_set_preview_buffer;
+        dev->device.set_preview_buffer = tv_input_set_preview_buffer;
         dev->device.request_capture = tv_input_request_capture;
         dev->device.cancel_capture = tv_input_cancel_capture;
 

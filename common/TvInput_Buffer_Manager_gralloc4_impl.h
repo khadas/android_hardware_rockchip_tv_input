@@ -75,6 +75,13 @@ public:
              uint32_t width,
              uint32_t height,
              void** out_addr) final;
+    int LockLocked(buffer_handle_t buffer,
+             uint32_t flags,
+             uint32_t x,
+             uint32_t y,
+             uint32_t width,
+             uint32_t height,
+             void** out_addr) final;
     int LockYCbCr(buffer_handle_t buffer,
                   uint32_t flags,
                   uint32_t x,
@@ -83,6 +90,7 @@ public:
                   uint32_t height,
                   struct android_ycbcr* out_ycbcr) final;
     int Unlock(buffer_handle_t buffer) final;
+    int UnlockLocked(buffer_handle_t buffer) final;
     int FlushCache(buffer_handle_t buffer) final;
     int GetHandleFd(buffer_handle_t buffer) final;
     int GetHandleBufferSize(buffer_handle_t handle) final;  

@@ -159,6 +159,14 @@ class EXPORTED TvInputBufferManager {
                    uint32_t height,
                    void** out_addr) = 0;
 
+  virtual int LockLocked(buffer_handle_t buffer,
+                   uint32_t flags,
+                   uint32_t x,
+                   uint32_t y,
+                   uint32_t width,
+                   uint32_t height,
+                   void** out_addr) = 0;
+
   // This method is analogous to the lock_ycbcr() function in Android gralloc
   // module.  Here all the physical planes of the buffer handle are mapped with
   // the given args.
@@ -206,6 +214,7 @@ class EXPORTED TvInputBufferManager {
   // Returns:
   //    0 on success; -EINVAL on invalid buffer handle.
   virtual int Unlock(buffer_handle_t buffer) = 0;
+  virtual int UnlockLocked(buffer_handle_t buffer) = 0;
 
   // This method is used to flush cache.
   // If the allocated buffer has software read/write flags, and the memory

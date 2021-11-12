@@ -62,7 +62,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     }
 
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
-    ALOGD("\nRTSidebandWindow::init width=%d, height=%d, format=%d, usage=%d\n", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, mSidebandInfo.usage);
+    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, mSidebandInfo.usage);
 
     mVopRender = android::DrmVopRender::GetInstance();
     if (!mVopRender->mInitialized) {
@@ -349,38 +349,64 @@ int RTSidebandWindow::importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_h
     }
     return -1;
 }
-static bool writeOutBuffData = false;
+static int writeNums = 0;
+static int writeNums2 = 0;
 int RTSidebandWindow::buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle) {
+    ALOGD("%s in srcHandle=%p, dstRawHandle=%p", __FUNCTION__, srcHandle, dstRawHandle);
     if (srcHandle && dstRawHandle) {
-        buffer_handle_t outBufferHandle = NULL;
+        buffer_handle_t *outBufferHandle = &dstRawHandle;
         void *tmpSrcPtr = NULL, *tmpDstPtr = NULL;
         int srcDatasize = -1;
-        if(!mBuffMgr->Register(dstRawHandle, &outBufferHandle)) {
-            ALOGV("dst buffer handle fd = %d", mBuffMgr->GetHandleFd(outBufferHandle));
+        // if(!mBuffMgr->Register(dstRawHandle, outBufferHandle)) {
+        if(!mBuffMgr->ImportBufferImpl(dstRawHandle, outBufferHandle)) {
+            ALOGD("out buffer handle fd = %d", getBufferHandleFd(*outBufferHandle));
+            // ALOGD("dst buffer handle fd = %d", mBuffMgr->GetHandleFd(*outBufferHandle));
             int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
             mBuffMgr->Lock(srcHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcHandle), mBuffMgr->GetHeight(srcHandle), &tmpSrcPtr);
             for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
                 srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
             }
-
-            mBuffMgr->Lock(outBufferHandle, lockMode, 0, 0, mBuffMgr->GetWidth(outBufferHandle), mBuffMgr->GetHeight(outBufferHandle), &tmpDstPtr);
-
-            std::memcpy(tmpDstPtr, tmpSrcPtr, srcDatasize);
-if (!writeOutBuffData) {
-    writeOutBuffData = true;
     FILE* fp = NULL;
-    char fileName[128] = "/data/system/tv_input_result_dump.yuv";
+    char fileName[128] = {0};
+if (writeNums2 < 4) {
+    sprintf(fileName, "/data/system/tv_input_src_dump_%d.yuv", writeNums2);
+    fp = fopen(fileName, "wb+");
+    if (fp != NULL) {
+        if (fwrite(tmpSrcPtr, srcDatasize, 1, fp) <= 0) {
+            ALOGE("fwrite %s failed.", fileName);
+        } else {
+            ALOGD("fwirte %s success", fileName);
+        }
+    } else {
+        ALOGE("open failed");
+    }
+    writeNums2++;
+    fclose(fp);
+}
+ALOGD("data tmpSrcPtr ptr = %p, srcDatasize=%d", tmpSrcPtr, srcDatasize);
+            mBuffMgr->LockLocked(*outBufferHandle, lockMode, 0, 0, mBuffMgr->GetWidth(*outBufferHandle), mBuffMgr->GetHeight(*outBufferHandle), &tmpDstPtr);
+ALOGD("data tmpDstPtr ptr = %p, width=%d, height=%d", tmpDstPtr, mBuffMgr->GetWidth(*outBufferHandle), mBuffMgr->GetHeight(*outBufferHandle));
+            std::memcpy(tmpDstPtr, tmpSrcPtr, srcDatasize);
+if (writeNums < 4) {
+// if (false) {
+    memset(fileName, 0, 128);
+    sprintf(fileName, "/data/system/tv_input_result_dump_%d.yuv", writeNums);
     fp = fopen(fileName, "wb+");
     if (fp != NULL) {
         if (fwrite(tmpDstPtr, srcDatasize, 1, fp) <= 0) {
             ALOGE("fwrite %s failed.", fileName);
+        } else {
+            ALOGD("fwirte %s success", fileName);
         }
+    } else {
+        ALOGE("open failed");
     }
+    writeNums++;
     fclose(fp);
 }
+            mBuffMgr->UnlockLocked(*outBufferHandle);
             mBuffMgr->Unlock(srcHandle);
-            mBuffMgr->Unlock(outBufferHandle);
-            mBuffMgr->Deregister(outBufferHandle);
+            // mBuffMgr->Deregister(*outBufferHandle);
             ALOGV("%s end", __FUNCTION__);
             return 0;
         }
