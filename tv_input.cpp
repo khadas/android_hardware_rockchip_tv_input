@@ -190,7 +190,7 @@ static int tv_input_get_stream_configurations(
         mconfig[0].format = DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[0].width = 1920;
         mconfig[0].height = 1080;
-        mconfig[0].buffCount = 4;
+        mconfig[0].buffCount = APP_PREVIEW_BUFF_CNT;
 
         mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
         mconfig[1].type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
@@ -199,7 +199,7 @@ static int tv_input_get_stream_configurations(
         mconfig[1].format = DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[1].width = 1920;
         mconfig[1].height = 1080;
-        mconfig[1].buffCount = 4;
+        mconfig[1].buffCount = APP_PREVIEW_BUFF_CNT;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
         break;
@@ -264,8 +264,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
                 width = s_HinDevStreamWidth;
                 height = s_HinDevStreamHeight;
             }
-        requestInfo.deviceId = device_id;
-        requestInfo.streamId = stream->stream_id;
+            requestInfo.streamId = stream->stream_id;
 
             s_TvInputPriv->mDev->set_format(width, height, DEFAULT_V4L2_STREAM_FORMAT);
             s_TvInputPriv->mDev->set_crop(0, 0, width, height);
@@ -325,7 +324,7 @@ static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
 static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 {
     ALOGD("%s called", __func__);
-    return -EINVAL;
+    return 0;
 }
 
 static int tv_input_set_preview_buffer(struct tv_input_device* dev, int device_id,
@@ -339,7 +338,29 @@ static int tv_input_set_preview_buffer(struct tv_input_device* dev, int device_i
         }
     }
     s_TvInputPriv->mDev->set_preview_buffer(request_buff);
-    return -EINVAL;
+    return 0;
+}
+
+static int tv_input_set_one_preview_buff(buffer_handle_t rawHandle, uint64_t bufferId)
+{
+    ALOGD("%s called", __func__);
+    s_TvInputPriv->mDev->set_one_preview_buff(rawHandle, bufferId);
+    return 0;
+}
+
+static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
+            int32_t top, int32_t left, int32_t width, int32_t height)
+{
+    ALOGD("%s called", __func__);
+    if (!s_TvInputPriv->isInitialized) {
+        if (hin_dev_open(deviceId, TV_STREAM_TYPE_BUFFER_PRODUCER) < 0) {
+            ALOGD("Open hdmi failed!!!\n");
+            return -EINVAL;
+        }
+        requestInfo.deviceId = deviceId;
+    }
+    s_TvInputPriv->mDev->set_preview_info(top, left, width, height);
+    return 0;
 }
 
 /*****************************************************************************/
@@ -398,6 +419,10 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->device.open_stream = tv_input_open_stream;
         dev->device.close_stream = tv_input_close_stream;
         dev->device.set_preview_buffer = tv_input_set_preview_buffer;
+
+        dev->device.set_one_preview_buff = tv_input_set_one_preview_buff;
+        dev->device.set_preview_info = tv_input_set_preview_info;
+
         dev->device.request_capture = tv_input_request_capture;
         dev->device.cancel_capture = tv_input_cancel_capture;
 

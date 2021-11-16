@@ -423,7 +423,6 @@ status_t TvInputBufferManagerImpl::createDescriptor(void* bufferDescriptorInfo,
     return static_cast<status_t>((ret.isOk()) ? error : kTransactionError);
 }
 
-
 status_t TvInputBufferManagerImpl::importBuffer(buffer_handle_t rawHandle,
                                       buffer_handle_t* outBufferHandle) const {
     ALOGV("import rawBuffer :%p", rawHandle);
@@ -561,6 +560,25 @@ int TvInputBufferManagerImpl::Deregister(buffer_handle_t buffer) {
         ALOGE("Invalid buffer type: %d", buffer_context->type);
         return -EINVAL;
     }
+}
+
+int TvInputBufferManagerImpl::ImportBufferLocked(buffer_handle_t& rawHandle) {
+    Error error;
+    buffer_handle_t importedHandle;
+    auto &mapper = get_mapperservice();
+    auto ret = mapper.importBuffer(android::hardware::hidl_handle(rawHandle), [&](const auto& tmpError, const auto& tmpBuffer) {
+        error = tmpError;
+        if (error == Error::NONE) {
+            importedHandle = static_cast<buffer_handle_t>(tmpBuffer);
+        }
+    });
+    if (error != Error::NONE) {
+        return -EINVAL;
+    }
+
+    rawHandle = importedHandle;
+    ALOGD("%s rawBuffer :%p, outHandle = %p", __FUNCTION__, rawHandle, importedHandle);
+    return 0;
 }
 
 int TvInputBufferManagerImpl::ImportBufferImpl(buffer_handle_t buffer, buffer_handle_t* outbuffer) {
@@ -1012,10 +1030,10 @@ int TvInputBufferManagerImpl::UnlockLocked(buffer_handle_t bufferHandle) {
             ALOGE("unlock(%p) failed with %d", bufferHandle, error);
         }
 
-        if (bufferHandle) {
-            freeBuffer(bufferHandle);           
-            buffer = nullptr;
-        }
+        // if (bufferHandle) {
+        //     freeBuffer(bufferHandle);           
+        //     buffer = nullptr;
+        // }
 
     }
 

@@ -106,6 +106,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int32_t  getHeight() { return mSidebandInfo.height; }
     int32_t  getFormat() { return mSidebandInfo.format; }
     int importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle);
+    int importHidlHandleBufferLocked(/*in&out*/buffer_handle_t& rawHandle);
     int registerHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle);
     int buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
     status_t goDisplay(buffer_handle_t buffer);

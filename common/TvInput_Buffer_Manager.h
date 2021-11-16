@@ -130,6 +130,8 @@ class EXPORTED TvInputBufferManager {
   //    0 on success; corresponding error code on failure.
   virtual int Deregister(buffer_handle_t buffer) = 0;
 
+  virtual int ImportBufferLocked(buffer_handle_t& rawHandle) = 0;
+
   virtual int ImportBufferImpl(buffer_handle_t rawHandle,
                                       buffer_handle_t* outBufferHandle) = 0;
 

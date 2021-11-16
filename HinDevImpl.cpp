@@ -629,7 +629,7 @@ int HinDevImpl::set_preview_buffer(const tv_stream_preview_request_t request_buf
         mPreviewRawHandle[i].isRendering = false;
         mPreviewRawHandle[i].isFilled = false;
         mPreviewRawHandle[i].bufferId = request_buff.input_buffers[i].bufferId;
-        mPreviewRawHandle[i].rawHandle = request_buff.input_buffers[i].buffer;
+        // mPreviewRawHandle[i].rawHandle = request_buff.input_buffers[i].buffer;
         mPreviewRawHandle[i].outHandle = request_buff.input_buffers[i].buffer;
         ALOGD("mPreviewRawHandle[%d].bufferId = %" PRIu64, i, mPreviewRawHandle[i].bufferId);
         ALOGD("mPreviewRawHandle[%d].buff = %p", i, request_buff.input_buffers[i].buffer);
@@ -742,11 +742,12 @@ int HinDevImpl::requestOneGrahicsBufferData(buffer_handle_t rawHandle, uint64_t 
         return 0;
     }
 
-        ALOGD("rawHandle = %p, bufferId=%" PRIu64, rawHandle, bufferId);
+    ALOGD("rawHandle = %p, bufferId=%" PRIu64, rawHandle, bufferId);
     for (int i=0; i<mPreviewRawHandle.size(); i++) {
         // if (mPreviewRawHandle[i].rawHandle == rawHandle) {
         if (mPreviewRawHandle[i].bufferId == bufferId) {
             if (mPreviewRawHandle[i].isFilled) {
+                ALOGD("%s mPreviewRawHandle index=%d.", __FUNCTION__, i);
                 mPreviewRawHandle[i].isRendering = false;
                 mPreviewRawHandle[i].isFilled = false;
             }
@@ -755,6 +756,28 @@ int HinDevImpl::requestOneGrahicsBufferData(buffer_handle_t rawHandle, uint64_t 
 
     ALOGV("%s end.", __FUNCTION__);
     return mHinNodeInfo->currBufferHandleIndex;
+}
+
+static int buffIndex = 0;
+int HinDevImpl::set_one_preview_buff(buffer_handle_t rawHandle, uint64_t bufferId) {
+    ALOGD("%s called, rawHandle=%p bufferId=%" PRIu64, __func__, rawHandle, bufferId);
+
+    int buffHandleFd = mSidebandWindow->importHidlHandleBufferLocked(rawHandle);
+    ALOGD("%s buffHandleFd=%d, after import rawHandle=%p", __FUNCTION__, buffHandleFd, rawHandle);
+    // mPreviewBuffMap.insert(std::make_pair(bufferId, rawHandle));
+    // mPreviewBuffMap[bufferId] = rawHandle;
+    mPreviewRawHandle[buffIndex].bufferId = bufferId;
+    mPreviewRawHandle[buffIndex].outHandle = rawHandle;
+    mPreviewRawHandle[buffIndex].isRendering = false;
+    mPreviewRawHandle[buffIndex].isFilled = false;
+    buffIndex++;
+
+    return 0;
+}
+
+int HinDevImpl::set_preview_info(int top, int left, int width, int height) {
+    mPreviewRawHandle.resize(APP_PREVIEW_BUFF_CNT);
+    return 0;
 }
 
 void HinDevImpl::wrapCaptureResultAndNotify(uint64_t id, buffer_handle_t handle) {
@@ -830,6 +853,13 @@ void HinDevImpl::debugShowFPS() {
         DEBUG_PRINT(3, "tvinput: %d Frames, %2.3f FPS", mFrameCount, mFps);
     }
 }
+
+
+int HinDevImpl::processOutputBuffThread()
+{
+    return NO_ERROR;
+}
+
 // static int currHandleIndex = -1;
 int HinDevImpl::previewBuffThread() {
     int ret;
@@ -838,7 +868,7 @@ int HinDevImpl::previewBuffThread() {
         if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
              mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
 
-        DEBUG_PRINT(mDebugLevel, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
+        DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  
         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret < 0) {
@@ -848,24 +878,16 @@ int HinDevImpl::previewBuffThread() {
             DEBUG_PRINT(3, "VIDIOC_DQBUF successful.");
         }
 
-        int currHandleIndex = -1;
         if (bRequestBegin) {
-            for (int i=0; i<mPreviewRawHandle.size(); i++) {
-                if (!mPreviewRawHandle[i].isRendering) {
-                    mSidebandWindow->buffCopy(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[i].outHandle);
-                    mPreviewRawHandle[i].isFilled = true;
-                    currHandleIndex = i;
-                    break;
-                }
-            }
-            if (currHandleIndex >= 0) {
-                mPreviewRawHandle[currHandleIndex].isRendering = true;
-                wrapCaptureResultAndNotify(mPreviewRawHandle[currHandleIndex].bufferId, mPreviewRawHandle[currHandleIndex].outHandle);
-            } else {
-                wrapCaptureResultAndNotify(-1, NULL);
-            }
+            ALOGD("%s mPreviewBuffIndex=%d", __FUNCTION__, mPreviewBuffIndex);
+            mSidebandWindow->buffCopy(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
+            mPreviewRawHandle[mPreviewBuffIndex++].isFilled = true;            
+            if (mPreviewBuffIndex == APP_PREVIEW_BUFF_CNT)
+                mPreviewBuffIndex = mPreviewBuffIndex % APP_PREVIEW_BUFF_CNT;
+            wrapCaptureResultAndNotify(mPreviewRawHandle[mPreviewBuffIndex].bufferId, mPreviewRawHandle[mPreviewBuffIndex].outHandle);
             debugShowFPS();
         }
+
         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret != 0) {
             DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
@@ -873,6 +895,7 @@ int HinDevImpl::previewBuffThread() {
             DEBUG_PRINT(3, "VIDIOC_QBUF successful.");
         }
         mHinNodeInfo->currBufferHandleIndex++;
+
     }
     return NO_ERROR;
 }

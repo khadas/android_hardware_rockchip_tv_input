@@ -15,6 +15,7 @@
 #include <linux/videodev2.h>
 #include <sys/time.h>
 
+#include <unordered_map>
 #include <utils/KeyedVector.h>
 #include <cutils/properties.h>
 #include <sys/types.h>
@@ -80,11 +81,18 @@ enum FrameType{
 
 typedef struct tv_preview_buff_app {
     uint64_t bufferId;
-    buffer_handle_t rawHandle;
+    // buffer_handle_t rawHandle;
     buffer_handle_t outHandle;
     bool isRendering;
     bool isFilled;
 } tv_preview_buff_app_t;
+
+typedef struct tv_input_preview_buff {
+    uint64_t bufferId;
+    buffer_handle_t* buffPtr;
+    bool isRendering;
+    bool isFilled;
+} tv_input_preview_buff_t;
 
 typedef void (*NotifyQueueDataCallback)(tv_input_capture_result_t result);
 
@@ -115,6 +123,8 @@ class HinDevImpl {
         int get_hin_crop(int *x, int *y, int *width, int *height);
         int set_hin_crop(int x, int y, int width, int height);
         int set_preview_buffer(const tv_stream_preview_request_t request_buff);
+        int set_one_preview_buff(buffer_handle_t rawHandle, uint64_t bufferId);
+        int set_preview_info(int top, int left, int width, int height);
         int aquire_buffer();
         // int inc_buffer_refcount(int* ptr);
         int release_buffer();
@@ -133,6 +143,7 @@ class HinDevImpl {
     private:
         int workThread();
         int previewBuffThread();
+        int processOutputBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
         void wrapCaptureResultAndNotify(uint64_t id, buffer_handle_t handle);
@@ -161,6 +172,20 @@ class HinDevImpl {
                 }
                 virtual bool threadLoop() {
                     mSource->previewBuffThread();
+                    // loop until we need to quit
+                    return true;
+                }
+        };
+        class OutputBuffQueueThread : public Thread {
+            HinDevImpl* mSource;
+            public:
+                OutputBuffQueueThread(HinDevImpl* source) :
+                    Thread(false), mSource(source) { }
+                virtual void onFirstRef() {
+                    run("preview buff output work thread", PRIORITY_URGENT_DISPLAY);
+                }
+                virtual bool threadLoop() {
+                    mSource->processOutputBuffThread();
                     // loop until we need to quit
                     return true;
                 }
@@ -203,5 +228,10 @@ class HinDevImpl {
         void *mUser;
         bool mPreviewThreadRunning;
         bool bRequestBegin = false;
+        int mPreviewBuffIndex = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
+        std::vector<tv_input_preview_buff_t> mPreviewBuff;
+        std::unordered_map<uint64_t, buffer_handle_t> mPreviewBuffMap;
+        // mutable std::mutex mDequeueBuffLock;
+        // std::condition_variable mDequeueBuffCond;
 };

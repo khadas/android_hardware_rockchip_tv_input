@@ -338,6 +338,18 @@ int RTSidebandWindow::getBufferLength(buffer_handle_t buffer) {
     return mBuffMgr->GetHandleBufferSize(buffer);
 }
 
+int RTSidebandWindow::importHidlHandleBufferLocked(buffer_handle_t& rawHandle) {
+    ALOGD("%s rawBuffer :%p", __FUNCTION__, rawHandle);
+    if (rawHandle) {
+        if(!mBuffMgr->ImportBufferLocked(rawHandle)) {
+            return getBufferHandleFd(rawHandle);
+        } else {
+            ALOGE("%s ImportBufferImpl failed.", __FUNCTION__);
+        }
+    }
+    return -1;
+}
+
 int RTSidebandWindow::importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle) {
     ALOGD("%s rawBuffer :%p", __FUNCTION__, rawHandle);
     if (rawHandle) {
@@ -349,6 +361,70 @@ int RTSidebandWindow::importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_h
     }
     return -1;
 }
+
+static int writeNums = 0;
+static int writeNums2 = 0;
+int RTSidebandWindow::buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstHandle) {
+    ALOGD("%s in srcHandle=%p, dstHandle=%p", __FUNCTION__, srcHandle, dstHandle);
+    if (srcHandle && dstHandle) {
+        // buffer_handle_t *outBufferHandle = &dstRawHandle;
+        void *tmpSrcPtr = NULL, *tmpDstPtr = NULL;
+        int srcDatasize = -1;
+        // if(!mBuffMgr->Register(dstRawHandle, outBufferHandle)) {
+            // ALOGD("out buffer handle fd = %d", getBufferHandleFd(*outBufferHandle));
+            // ALOGD("dst buffer handle fd = %d", mBuffMgr->GetHandleFd(*outBufferHandle));
+            int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+            mBuffMgr->Lock(srcHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcHandle), mBuffMgr->GetHeight(srcHandle), &tmpSrcPtr);
+            for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
+                srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
+            }
+    FILE* fp = NULL;
+    char fileName[128] = {0};
+if (writeNums2 < 4) {
+    sprintf(fileName, "/data/system/tv_input_src_dump_%d.yuv", writeNums2);
+    fp = fopen(fileName, "wb+");
+    if (fp != NULL) {
+        if (fwrite(tmpSrcPtr, srcDatasize, 1, fp) <= 0) {
+            ALOGE("fwrite %s failed.", fileName);
+        } else {
+            ALOGD("fwirte %s success", fileName);
+        }
+    } else {
+        ALOGE("open failed");
+    }
+    writeNums2++;
+    fclose(fp);
+}
+ALOGD("data tmpSrcPtr ptr = %p, srcDatasize=%d", tmpSrcPtr, srcDatasize);
+            mBuffMgr->LockLocked(dstHandle, lockMode, 0, 0, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle), &tmpDstPtr);
+ALOGD("data tmpDstPtr ptr = %p, width=%d, height=%d", tmpDstPtr, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle));
+            std::memcpy(tmpDstPtr, tmpSrcPtr, srcDatasize);
+if (writeNums < 4) {
+// if (false) {
+    memset(fileName, 0, 128);
+    sprintf(fileName, "/data/system/tv_input_result_dump_%d.yuv", writeNums);
+    fp = fopen(fileName, "wb+");
+    if (fp != NULL) {
+        if (fwrite(tmpDstPtr, srcDatasize, 1, fp) <= 0) {
+            ALOGE("fwrite %s failed.", fileName);
+        } else {
+            ALOGD("fwirte %s success", fileName);
+        }
+    } else {
+        ALOGE("open failed");
+    }
+    writeNums++;
+    fclose(fp);
+}
+            mBuffMgr->UnlockLocked(dstHandle);
+            mBuffMgr->Unlock(srcHandle);
+            // mBuffMgr->Deregister(*outBufferHandle);
+            ALOGV("%s end", __FUNCTION__);
+            return 0;
+    }
+    return -1;
+}
+/*
 static int writeNums = 0;
 static int writeNums2 = 0;
 int RTSidebandWindow::buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle) {
@@ -412,7 +488,7 @@ if (writeNums < 4) {
         }
     }
     return -1;
-}
+}*/
 
 int RTSidebandWindow::registerHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle) {
     ALOGD("%s rawBuffer :%p", __FUNCTION__, rawHandle);
