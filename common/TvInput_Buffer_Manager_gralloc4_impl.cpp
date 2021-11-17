@@ -506,6 +506,27 @@ int TvInputBufferManagerImpl::Free(buffer_handle_t buffer) {
     }
 }
 
+
+int TvInputBufferManagerImpl::FreeLocked(buffer_handle_t buffer) {
+    ALOGD("Free %p", buffer);
+
+    #if IMPORTBUFFER_CB == 1
+    if (buffer) {
+        freeBuffer(buffer);           
+        buffer = nullptr;
+    }
+    #else
+    if (buffer) {
+        auto abuffer = const_cast<native_handle_t*>(
+                buffer);
+        native_handle_close(abuffer);
+        native_handle_delete(abuffer);
+        buffer = nullptr;
+    }
+    #endif
+    return 0;
+}
+
 int TvInputBufferManagerImpl::Register(buffer_handle_t buffer, buffer_handle_t* outbuffer) {
     ALOGV("Register buffer:%p", buffer);
     auto context_it = buffer_context_.find(buffer);
@@ -579,10 +600,6 @@ int TvInputBufferManagerImpl::ImportBufferLocked(buffer_handle_t& rawHandle) {
     rawHandle = importedHandle;
     ALOGD("%s rawBuffer :%p, outHandle = %p", __FUNCTION__, rawHandle, importedHandle);
     return 0;
-}
-
-int TvInputBufferManagerImpl::ImportBufferImpl(buffer_handle_t buffer, buffer_handle_t* outbuffer) {
-    return importBuffer(buffer, outbuffer);
 }
 
 int TvInputBufferManagerImpl::Lockinternal(buffer_handle_t bufferHandle,
@@ -992,51 +1009,43 @@ int TvInputBufferManagerImpl::Unlock(buffer_handle_t bufferHandle) {
 int TvInputBufferManagerImpl::UnlockLocked(buffer_handle_t bufferHandle) {
     ALOGV("Unlock buffer:%p", bufferHandle);
 
-    if (true) {
-        auto &mapper = get_mapperservice();
-        auto buffer = const_cast<native_handle_t*>(bufferHandle);
-        ALOGV("Unlock buffer:%p", buffer);
+    auto &mapper = get_mapperservice();
+    auto buffer = const_cast<native_handle_t*>(bufferHandle);
+    ALOGV("Unlock buffer:%p", buffer);
 
-        int releaseFence = -1;
-        Error error;
-        auto ret = mapper.unlock(buffer,
-                                 [&](const auto& tmpError, const auto& tmpReleaseFence)
-                                 {
-            error = tmpError;
-            if (error != Error::NONE) {
-                return;
-            }
-
-            auto fenceHandle = tmpReleaseFence.getNativeHandle(); // 预期 unlock() 不会返回有效的 release_fence.
-            if (fenceHandle && fenceHandle->numFds == 1)
-            {
-                ALOGE("got unexpected valid fd of release_fence : %d", fenceHandle->data[0]);
-
-                int fd = dup(fenceHandle->data[0]);
-                if (fd >= 0) {
-                    releaseFence = fd;
-                } else {
-                    ALOGE("failed to dup unlock release fence");
-                    sync_wait(fenceHandle->data[0], -1);
-                }
-            }
-                                 });
-
-        if (!ret.isOk()) {
-            error = kTransactionError;
-        }
-
+    int releaseFence = -1;
+    Error error;
+    auto ret = mapper.unlock(buffer,
+                             [&](const auto& tmpError, const auto& tmpReleaseFence)
+                             {
+        error = tmpError;
         if (error != Error::NONE) {
-            ALOGE("unlock(%p) failed with %d", bufferHandle, error);
+            return;
         }
 
-        // if (bufferHandle) {
-        //     freeBuffer(bufferHandle);           
-        //     buffer = nullptr;
-        // }
+        auto fenceHandle = tmpReleaseFence.getNativeHandle(); // 预期 unlock() 不会返回有效的 release_fence.
+        if (fenceHandle && fenceHandle->numFds == 1)
+        {
+            ALOGE("got unexpected valid fd of release_fence : %d", fenceHandle->data[0]);
 
+            int fd = dup(fenceHandle->data[0]);
+            if (fd >= 0) {
+                releaseFence = fd;
+            } else {
+                ALOGE("failed to dup unlock release fence");
+                sync_wait(fenceHandle->data[0], -1);
+            }
+        }
+                             });
+
+    if (!ret.isOk()) {
+        error = kTransactionError;
     }
 
+    if (error != Error::NONE) {
+        ALOGE("unlock(%p) failed with %d", bufferHandle, error);
+    }
+    
     return 0;
 }
 

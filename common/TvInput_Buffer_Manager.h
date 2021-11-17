@@ -107,6 +107,7 @@ class EXPORTED TvInputBufferManager {
   // Returns:
   //    0 on success; corresponding error code on failure.
   virtual int Free(buffer_handle_t buffer) = 0;
+  virtual int FreeLocked(buffer_handle_t buffer) = 0;
 
   // This method is analogous to the register() function in Android gralloc
   // module.  This method needs to be called for buffers that are not allocated
@@ -131,9 +132,6 @@ class EXPORTED TvInputBufferManager {
   virtual int Deregister(buffer_handle_t buffer) = 0;
 
   virtual int ImportBufferLocked(buffer_handle_t& rawHandle) = 0;
-
-  virtual int ImportBufferImpl(buffer_handle_t rawHandle,
-                                      buffer_handle_t* outBufferHandle) = 0;
 
   // This method is analogous to the lock() function in Android gralloc module.
   // Here the buffer handle is mapped with the given args.

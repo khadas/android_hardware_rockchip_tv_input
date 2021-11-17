@@ -76,7 +76,7 @@ enum State{
 
 enum FrameType{
     TYPF_SIDEBAND_WINDOW = 0x1,
-    TYPE_NATIVE_WINDOW_DATA = 0x2,
+    TYPE_STREAM_BUFFER_PRODUCER = 0x2,
 };
 
 typedef struct tv_preview_buff_app {
@@ -87,12 +87,12 @@ typedef struct tv_preview_buff_app {
     bool isFilled;
 } tv_preview_buff_app_t;
 
-typedef struct tv_input_preview_buff {
-    uint64_t bufferId;
-    buffer_handle_t* buffPtr;
-    bool isRendering;
-    bool isFilled;
-} tv_input_preview_buff_t;
+// typedef struct tv_input_preview_buff {
+//     uint64_t bufferId;
+//     buffer_handle_t* buffPtr;
+//     bool isRendering;
+//     bool isFilled;
+// } tv_input_preview_buff_t;
 
 typedef void (*NotifyQueueDataCallback)(tv_input_capture_result_t result);
 
@@ -122,9 +122,8 @@ class HinDevImpl {
         int set_crop(int x, int y, int width, int height);
         int get_hin_crop(int *x, int *y, int *width, int *height);
         int set_hin_crop(int x, int y, int width, int height);
-        int set_preview_buffer(const tv_stream_preview_request_t request_buff);
-        int set_one_preview_buff(buffer_handle_t rawHandle, uint64_t bufferId);
         int set_preview_info(int top, int left, int width, int height);
+        int set_preview_buffer(buffer_handle_t rawHandle, uint64_t bufferId);
         int aquire_buffer();
         // int inc_buffer_refcount(int* ptr);
         int release_buffer();
@@ -137,16 +136,15 @@ class HinDevImpl {
         int stop_device();
         int set_mode(int display_mode);
         buffer_handle_t getSindebandBufferHandle();
-        int requestOneGrahicsBufferData(buffer_handle_t rawHandle, uint64_t bufferId);
+        int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
 
         const tv_input_callback_ops_t* mTvInputCB;
     private:
         int workThread();
-        int previewBuffThread();
-        int processOutputBuffThread();
+        // int previewBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
-        void wrapCaptureResultAndNotify(uint64_t id, buffer_handle_t handle);
+        void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle);
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -162,34 +160,20 @@ class HinDevImpl {
                     return true;
                 }
         };
-        class PreviewBuffThread : public Thread {
-            HinDevImpl* mSource;
-            public:
-                PreviewBuffThread(HinDevImpl* source) :
-                    Thread(false), mSource(source) { }
-                virtual void onFirstRef() {
-                    run("hdmi_input_source preview buff work thread", PRIORITY_URGENT_DISPLAY);
-                }
-                virtual bool threadLoop() {
-                    mSource->previewBuffThread();
-                    // loop until we need to quit
-                    return true;
-                }
-        };
-        class OutputBuffQueueThread : public Thread {
-            HinDevImpl* mSource;
-            public:
-                OutputBuffQueueThread(HinDevImpl* source) :
-                    Thread(false), mSource(source) { }
-                virtual void onFirstRef() {
-                    run("preview buff output work thread", PRIORITY_URGENT_DISPLAY);
-                }
-                virtual bool threadLoop() {
-                    mSource->processOutputBuffThread();
-                    // loop until we need to quit
-                    return true;
-                }
-        };
+        // class PreviewBuffThread : public Thread {
+        //     HinDevImpl* mSource;
+        //     public:
+        //         PreviewBuffThread(HinDevImpl* source) :
+        //             Thread(false), mSource(source) { }
+        //         virtual void onFirstRef() {
+        //             run("hdmi_input_source preview buff work thread", PRIORITY_URGENT_DISPLAY);
+        //         }
+        //         virtual bool threadLoop() {
+        //             mSource->previewBuffThread();
+        //             // loop until we need to quit
+        //             return true;
+        //         }
+        // };
     private:
         //int mCurrentIndex;
         //KeyedVector<long *, long> mBufs;
@@ -211,7 +195,7 @@ class HinDevImpl {
         int mNativeWindowPixelFormat;
         sp<ANativeWindow> mANativeWindow;
         sp<WorkThread>   mWorkThread;
-        sp<PreviewBuffThread>   mPreviewBuffThread;
+        // sp<PreviewBuffThread>   mPreviewBuffThread;
         mutable Mutex mLock;
         int mHinDevHandle;
         struct HinNodeInfo *mHinNodeInfo;
@@ -226,12 +210,8 @@ class HinDevImpl {
         int mShowFps;
         int mDumpFrameCount;
         void *mUser;
-        bool mPreviewThreadRunning;
-        bool bRequestBegin = false;
+        // bool mPreviewThreadRunning;
         int mPreviewBuffIndex = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
-        std::vector<tv_input_preview_buff_t> mPreviewBuff;
-        std::unordered_map<uint64_t, buffer_handle_t> mPreviewBuffMap;
-        // mutable std::mutex mDequeueBuffLock;
-        // std::condition_variable mDequeueBuffCond;
+        // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

@@ -292,7 +292,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 }
 
 NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
-    ALOGD("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
+    ALOGV("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
     tv_input_event_t event;
     event.capture_result.device_id = requestInfo.deviceId;
     event.capture_result.stream_id = requestInfo.streamId;
@@ -310,11 +310,11 @@ NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
 
 static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
             int stream_id, uint64_t buff_id, buffer_handle_t buffer, uint32_t seq) {
-    ALOGD("%s called", __func__);
+    ALOGV("%s called", __func__);
     if (s_TvInputPriv && s_TvInputPriv->mDev && buffer != nullptr) {
         requestInfo.seq = seq;
         s_TvInputPriv->mDev->set_preview_callback((NotifyQueueDataCallback)dataCallback);
-        s_TvInputPriv->mDev->requestOneGrahicsBufferData(buffer, buff_id);
+        s_TvInputPriv->mDev->request_capture(buffer, buff_id);
         return 0;
     }
 
@@ -324,27 +324,6 @@ static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
 static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 {
     ALOGD("%s called", __func__);
-    return 0;
-}
-
-static int tv_input_set_preview_buffer(struct tv_input_device* dev, int device_id,
-            const tv_stream_preview_request_t request_buff)
-{
-    ALOGD("%s called", __func__);
-    if (!s_TvInputPriv->isInitialized) {
-        if (hin_dev_open(device_id, TV_STREAM_TYPE_BUFFER_PRODUCER) < 0) {
-            ALOGD("Open hdmi failed!!!\n");
-            return -EINVAL;
-        }
-    }
-    s_TvInputPriv->mDev->set_preview_buffer(request_buff);
-    return 0;
-}
-
-static int tv_input_set_one_preview_buff(buffer_handle_t rawHandle, uint64_t bufferId)
-{
-    ALOGD("%s called", __func__);
-    s_TvInputPriv->mDev->set_one_preview_buff(rawHandle, bufferId);
     return 0;
 }
 
@@ -360,6 +339,13 @@ static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
         requestInfo.deviceId = deviceId;
     }
     s_TvInputPriv->mDev->set_preview_info(top, left, width, height);
+    return 0;
+}
+
+static int tv_input_set_preview_buffer(buffer_handle_t rawHandle, uint64_t bufferId)
+{
+    ALOGD("%s called", __func__);
+    s_TvInputPriv->mDev->set_preview_buffer(rawHandle, bufferId);
     return 0;
 }
 
@@ -418,10 +404,8 @@ static int tv_input_device_open(const struct hw_module_t* module,
                 tv_input_get_stream_configurations;
         dev->device.open_stream = tv_input_open_stream;
         dev->device.close_stream = tv_input_close_stream;
-        dev->device.set_preview_buffer = tv_input_set_preview_buffer;
-
-        dev->device.set_one_preview_buff = tv_input_set_one_preview_buff;
         dev->device.set_preview_info = tv_input_set_preview_info;
+        dev->device.set_preview_buffer = tv_input_set_preview_buffer;
 
         dev->device.request_capture = tv_input_request_capture;
         dev->device.cancel_capture = tv_input_cancel_capture;

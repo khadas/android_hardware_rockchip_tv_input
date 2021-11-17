@@ -87,15 +87,13 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t flush();
 
     status_t allocateBuffer(buffer_handle_t *buffer);
-    status_t freeBuffer(buffer_handle_t *buffer);
+    status_t freeBuffer(buffer_handle_t *buffer, int type);
     status_t remainBuffer(buffer_handle_t buffer);
     status_t dequeueBuffer(buffer_handle_t *buffer);
     status_t queueBuffer(buffer_handle_t buffer);
     status_t allocateSidebandHandle(buffer_handle_t *handle);
     int getBufferHandleFd(buffer_handle_t buffer);
     int getBufferLength(buffer_handle_t buffer);
-    void getBufferDataLocked(buffer_handle_t srcBufferHandle, void** dstDataPtr, int *dstDataSize);
-    void unLockBufferHandle(buffer_handle_t buffer);
 
     status_t setBufferGeometry(int32_t width, int32_t height, int32_t format);
     status_t setCrop(int32_t left, int32_t top, int32_t right, int32_t bottom);
@@ -105,16 +103,15 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int32_t  getWidth() { return mSidebandInfo.width; }
     int32_t  getHeight() { return mSidebandInfo.height; }
     int32_t  getFormat() { return mSidebandInfo.format; }
-    int importHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle);
     int importHidlHandleBufferLocked(/*in&out*/buffer_handle_t& rawHandle);
-    int registerHidlHandleBuffer(buffer_handle_t rawHandle, buffer_handle_t* outBufferHandle);
-    int buffCopy(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
-    status_t goDisplay(buffer_handle_t buffer);
+    int buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
+    status_t show(buffer_handle_t buffer);
     status_t clearVopArea();
 
  private:
     RTSidebandWindow(const RTSidebandWindow& other);
     RTSidebandWindow& operator=(const RTSidebandWindow& other);
+    int writeData2File(char *fileName, void *data, int dataSize);
 
     virtual void messageThreadLoop();
     virtual status_t requestExitAndWait();
