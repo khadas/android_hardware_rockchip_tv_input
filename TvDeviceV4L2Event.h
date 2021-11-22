@@ -34,6 +34,7 @@ public:
     
     virtual int initialize(int fd);
     virtual void closeEventThread();
+    virtual int getSubDevFd();
     virtual status_t setControl(int aControlNum, const int value, const char *name);
     virtual status_t getControl(int aControlNum, int *value);
     virtual status_t queryMenu(v4l2_querymenu &menu);
@@ -72,6 +73,7 @@ public:
             virtual void openDevice();
             virtual void closeDevice();
             virtual bool threadLoop() override;
+	    int getFd() { return mCamFd; }
         private :
             int mVideoFd;
             int mCamFd;

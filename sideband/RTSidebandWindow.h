@@ -53,7 +53,7 @@ typedef struct RT_SIDEBAND_INFO {
     INT32 top;
     INT32 right;
     INT32 bottom;
-    INT32 usage;
+    INT64 usage;
     INT32 width;
     INT32 height;
     INT32 format;
@@ -111,7 +111,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
  private:
     RTSidebandWindow(const RTSidebandWindow& other);
     RTSidebandWindow& operator=(const RTSidebandWindow& other);
-    int writeData2File(char *fileName, void *data, int dataSize);
+    int writeData2File(const char *fileName, void *data, int dataSize);
 
     virtual void messageThreadLoop();
     virtual status_t requestExitAndWait();

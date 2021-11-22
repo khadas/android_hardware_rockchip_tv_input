@@ -62,7 +62,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     }
 
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
-    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, mSidebandInfo.usage);
+    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%lld", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage);
 
     mVopRender = android::DrmVopRender::GetInstance();
     if (!mVopRender->mInitialized) {
@@ -358,7 +358,9 @@ int RTSidebandWindow::importHidlHandleBufferLocked(buffer_handle_t& rawHandle) {
 }
 
 int RTSidebandWindow::buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_t dstHandle) {
-    ALOGV("%s in srcHandle=%p, dstHandle=%p", __FUNCTION__, srcHandle, dstHandle);
+    ALOGD("%s in srcHandle=%p, dstHandle=%p", __FUNCTION__, srcHandle, dstHandle);
+    std::string file1 = "/data/system/tv_input_src_dump.yuv";
+    std::string file2 = "/data/system/tv_input_result_dump.yuv";
     if (srcHandle && dstHandle) {
         void *tmpSrcPtr = NULL, *tmpDstPtr = NULL;
         int srcDatasize = -1;
@@ -367,21 +369,20 @@ int RTSidebandWindow::buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_
             for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
                 srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
             }
-            // writeData2File("/data/system/tv_input_src_dump.yuv", tmpSrcPtr, srcDatasize);
-            ALOGV("data tmpSrcPtr ptr = %p, srcDatasize=%d", tmpSrcPtr, srcDatasize);
+             writeData2File(file1.c_str(), tmpSrcPtr, srcDatasize);
+            ALOGD("data tmpSrcPtr ptr = %p, srcDatasize=%d", tmpSrcPtr, srcDatasize);
             mBuffMgr->LockLocked(dstHandle, lockMode, 0, 0, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle), &tmpDstPtr);
-            ALOGV("data tmpDstPtr ptr = %p, width=%d, height=%d", tmpDstPtr, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle));
+            ALOGD("data tmpDstPtr ptr = %p, width=%d, height=%d", tmpDstPtr, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle));
             std::memcpy(tmpDstPtr, tmpSrcPtr, srcDatasize);
-            // writeData2File("/data/system/tv_input_result_dump.yuv", tmpDstPtr, srcDatasize);
+             writeData2File(file2.c_str(), tmpDstPtr, srcDatasize);
             mBuffMgr->UnlockLocked(dstHandle);
             mBuffMgr->Unlock(srcHandle);
-            ALOGV("%s end", __FUNCTION__);
+            ALOGD("%s end", __FUNCTION__);
             return 0;
     }
     return -1;
 }
-
-int RTSidebandWindow::writeData2File(char *fileName, void *data, int dataSize) {
+int RTSidebandWindow::writeData2File(const char *fileName, void *data, int dataSize) {
     int ret = 0;
     FILE* fp = NULL;
     fp = fopen(fileName, "wb+");

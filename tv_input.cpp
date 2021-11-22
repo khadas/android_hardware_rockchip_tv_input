@@ -65,7 +65,6 @@ static tv_input_private_t *s_TvInputPriv;
 static tv_input_request_info_t requestInfo;
 static int s_HinDevStreamWidth = 1920;
 static int s_HinDevStreamHeight = 1080;
-
 //static unsigned int gHinDevOpened = 0;
 //static Mutex gHinDevOpenLock;
 //static HinDevImpl* gHinHals[MAX_HIN_DEVICE_SUPPORTED];
@@ -188,8 +187,8 @@ static int tv_input_get_stream_configurations(
         mconfig[0].max_video_width = s_HinDevStreamWidth;
         mconfig[0].max_video_height = s_HinDevStreamHeight;
         mconfig[0].format = DEFAULT_TVHAL_STREAM_FORMAT;
-        mconfig[0].width = 1920;
-        mconfig[0].height = 1080;
+        mconfig[0].width = 1280;
+        mconfig[0].height = 720;
         mconfig[0].buffCount = APP_PREVIEW_BUFF_CNT;
 
         mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
@@ -197,8 +196,8 @@ static int tv_input_get_stream_configurations(
         mconfig[1].max_video_width = s_HinDevStreamWidth;
         mconfig[1].max_video_height = s_HinDevStreamHeight;
         mconfig[1].format = DEFAULT_TVHAL_STREAM_FORMAT;
-        mconfig[1].width = 1920;
-        mconfig[1].height = 1080;
+        mconfig[1].width = 1280;
+        mconfig[1].height = 720;
         mconfig[1].buffCount = APP_PREVIEW_BUFF_CNT;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
@@ -292,7 +291,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 }
 
 NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
-    ALOGV("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
+    ALOGD("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
     tv_input_event_t event;
     event.capture_result.device_id = requestInfo.deviceId;
     event.capture_result.stream_id = requestInfo.streamId;

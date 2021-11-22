@@ -29,8 +29,8 @@ V4L2DeviceEvent::~V4L2DeviceEvent()
 }
 int V4L2DeviceEvent::initialize(int fd){
     mFd = fd;
-    subscribeEvent(V4L2_EVENT_SOURCE_CHANGE);
-    subscribeEvent(V4L2_EVENT_MOTION_DET);
+    //subscribeEvent(V4L2_EVENT_SOURCE_CHANGE);
+    //subscribeEvent(V4L2_EVENT_MOTION_DET);
 
     mV4L2EventThread = new V4L2EventThread(mFd,callback_);
     mV4L2EventThread->v4l2pipe();
@@ -43,6 +43,10 @@ void V4L2DeviceEvent::closeEventThread() {
         mV4L2EventThread->join();
         mV4L2EventThread.clear();
     }
+}
+int V4L2DeviceEvent::getSubDevFd()
+{
+    return mV4L2EventThread->getFd();
 }
 int V4L2DeviceEvent::subscribeEvent(int event)
 {
@@ -305,7 +309,7 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
 		}
 #else
 
-    struct v4l2_control control;
+    /*struct v4l2_control control;
     memset(&control, 0, sizeof(struct v4l2_control));
     control.id = V4L2_CID_DV_RX_POWER_PRESENT;
     int err = ioctl(mCamFd, VIDIOC_G_CTRL, &control);
@@ -323,7 +327,8 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
     if (err < 0) {
         ALOGD("Set VIDIOC_SUBDEV_QUERY_DV_TIMINGS failed ,%d(%s)", errno, strerror(errno));
     }
-    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,control.value && !noSignalAndSync);
+    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,control.value && !noSignalAndSync);*/
+    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(1280,720,1);
     if(mCurformat->getFormatWeight() != formatSize->getFormatWeight() 
             && mCurformat->getFormatHeight() != formatSize->getFormatHeight()){
         mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());

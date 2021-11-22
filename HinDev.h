@@ -78,6 +78,7 @@ enum FrameType{
 };
 
 typedef struct tv_preview_buff_app {
+    int bufferFd;
     uint64_t bufferId;
     // buffer_handle_t rawHandle;
     buffer_handle_t outHandle;
@@ -110,11 +111,11 @@ class HinDevImpl {
     public:
         HinDevImpl();
         ~HinDevImpl();
-        int init(int id, int width, int height, int type);
+        int init(int id, int& width, int& height,int type);
         int start();
         int stop();
         int pause();
-        int get_format();
+	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
         int set_rotation(int degree);
         int set_crop(int x, int y, int width, int height);
@@ -208,7 +209,7 @@ class HinDevImpl {
         int mShowFps;
         int mDumpFrameCount;
         void *mUser;
-        // bool mPreviewThreadRunning;
+        bool mV4L2DataFormatConvert;
         int mPreviewBuffIndex = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
