@@ -111,7 +111,8 @@ class HinDevImpl {
     public:
         HinDevImpl();
         ~HinDevImpl();
-        int init(int id, int& width, int& height,int type);
+        int init(int id,int type);
+        int createDevice(int id, int& initWidth, int& initHeight,int& initFormat);
         int start();
         int stop();
         int pause();
@@ -211,6 +212,7 @@ class HinDevImpl {
         void *mUser;
         bool mV4L2DataFormatConvert;
         int mPreviewBuffIndex = 0;
+	bool mFirstRequestCapture;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

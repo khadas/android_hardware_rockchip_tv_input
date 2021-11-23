@@ -63,8 +63,9 @@ typedef struct tv_input_request_info {
 
 static tv_input_private_t *s_TvInputPriv;
 static tv_input_request_info_t requestInfo;
-static int s_HinDevStreamWidth = 1920;
-static int s_HinDevStreamHeight = 1080;
+static int s_HinDevStreamWidth = 1280;
+static int s_HinDevStreamHeight = 720;
+static int s_HinDevStreamFormat = DEFAULT_TVHAL_STREAM_FORMAT;
 //static unsigned int gHinDevOpened = 0;
 //static Mutex gHinDevOpenLock;
 //static HinDevImpl* gHinHals[MAX_HIN_DEVICE_SUPPORTED];
@@ -128,6 +129,43 @@ static int getHdmiPortID(tv_input_source_t source_type) {
     return port_id;
 }
 
+static int hin_dev_open(int deviceId, int type)
+{   
+    ALOGD("hin_dev_open deviceId:=%d",deviceId); 
+    HinDevImpl* hinDevImpl = NULL;
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    //Mutex::Autolock lock(gHinDevOpenLock);
+    if (deviceId == SOURCE_HDMI1) {
+        if (deviceId >=  MAX_HIN_DEVICE_SUPPORTED) {
+            ALOGD("provided device id out of bounds , deviceid = %d .\n" , deviceId);
+            return -EINVAL;
+        }
+        if (!s_TvInputPriv->mDev) {
+            hinDevImpl = new HinDevImpl;
+            if (!hinDevImpl) {
+                ALOGE("no memory to new hinDevImpl");
+                return -ENOMEM;
+            }
+            s_TvInputPriv->mDev = hinDevImpl;
+            if (s_TvInputPriv->mDev->createDevice(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat)!= 0) {
+                ALOGE("hinDevImpl->init %d failed!", deviceId);
+                delete s_TvInputPriv->mDev;
+                return -1;
+            }
+            ALOGE("hinDevImpl->init %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
+            property_get("vendor.tvinput.buff_type", prop_value, "0");
+            int type = TV_STREAM_TYPE_BUFFER_PRODUCER;//((int)atoi(prop_value) == 0) ? TV_STREAM_TYPE_BUFFER_PRODUCER : TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+            s_TvInputPriv->mDev->set_data_callback((V4L2EventCallBack)hinDevEventCallback);
+            if (s_TvInputPriv->mDev->init(deviceId, type)!= 0) {
+                ALOGE("hinDevImpl->init %d failed!", deviceId);
+                delete s_TvInputPriv->mDev;
+                return -1;
+           }
+            s_TvInputPriv->isInitialized = true;
+        }
+    }
+    return 0;
+}
 /*****************************************************************************/
 static int generateEvent(tv_input_private_t *priv, tv_input_source_t source_type, int event_type) {
     tv_input_event_t event;
@@ -171,12 +209,17 @@ static tv_stream_config_t mconfig[NUM_OF_CONFIGS_DEFAULT];
 static int tv_input_get_stream_configurations(
         const struct tv_input_device *dev, int device_id, int *num_of_configs, const tv_stream_config_t **configs)
 {
-    ALOGD("%s called device_id=%d", __func__, device_id);
+    ALOGD("%s called device_id=%d,s_TvInputPriv=%p", __func__, device_id,s_TvInputPriv);
     UNUSED(dev);
     if (device_id == -1) {
         *num_of_configs = -1;
     }
-    
+    if (device_id == SOURCE_HDMI1){
+	if (hin_dev_open(device_id,0) < 0) {
+		ALOGD("Open hdmi failed!!!\n");
+		return -EINVAL;
+	}
+    }
     switch (device_id) {
     case SOURCE_TV:
     case SOURCE_DTV:
@@ -187,8 +230,8 @@ static int tv_input_get_stream_configurations(
         mconfig[0].max_video_width = s_HinDevStreamWidth;
         mconfig[0].max_video_height = s_HinDevStreamHeight;
         mconfig[0].format = DEFAULT_TVHAL_STREAM_FORMAT;
-        mconfig[0].width = 1280;
-        mconfig[0].height = 720;
+        mconfig[0].width = s_HinDevStreamWidth;
+        mconfig[0].height = s_HinDevStreamHeight;
         mconfig[0].buffCount = APP_PREVIEW_BUFF_CNT;
 
         mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
@@ -196,8 +239,8 @@ static int tv_input_get_stream_configurations(
         mconfig[1].max_video_width = s_HinDevStreamWidth;
         mconfig[1].max_video_height = s_HinDevStreamHeight;
         mconfig[1].format = DEFAULT_TVHAL_STREAM_FORMAT;
-        mconfig[1].width = 1280;
-        mconfig[1].height = 720;
+        mconfig[1].width = s_HinDevStreamWidth;
+        mconfig[1].height = s_HinDevStreamWidth;
         mconfig[1].buffCount = APP_PREVIEW_BUFF_CNT;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
@@ -208,50 +251,10 @@ static int tv_input_get_stream_configurations(
     return 0;
 }
 
-static int hin_dev_open(int deviceId, int type)
-{
-    ALOGD("hin_dev_open");
-    HinDevImpl* hinDevImpl = NULL;
-    //Mutex::Autolock lock(gHinDevOpenLock);
-
-    if (deviceId != -1) {
-        if (deviceId >=  MAX_HIN_DEVICE_SUPPORTED) {
-            ALOGD("provided device id out of bounds , deviceid = %d .\n" , deviceId);
-            return -EINVAL;
-        }
-
-        if (!s_TvInputPriv->mDev) {
-            hinDevImpl = new HinDevImpl;
-            if (!hinDevImpl) {
-                ALOGE("no memory to new hinDevImpl");
-                return -ENOMEM;
-            }
-            s_TvInputPriv->mDev = hinDevImpl;
-            s_TvInputPriv->mDev->set_data_callback((V4L2EventCallBack)hinDevEventCallback);
-            usleep(10*1000);
-            if (s_TvInputPriv->mDev->init(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight, type)!= 0) {
-                ALOGE("hinDevImpl->init %d failed!", deviceId);
-                delete s_TvInputPriv->mDev;
-                return -1;
-            }
-            s_TvInputPriv->isInitialized = true;
-        }
-    }
-    return 0;
-}
-
 static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_stream_t *stream)
 {
     ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->stream_id, stream->type);
     if (s_TvInputPriv) {
-
-        if (!s_TvInputPriv->isInitialized){
-            if (hin_dev_open(device_id, stream->type) < 0) {
-                ALOGD("Open hdmi failed!!!\n");
-                return -EINVAL;
-            }
-        }
-
         if (s_TvInputPriv->mDev) {
             int width = 0, height = 0;
             char prop_value[PROPERTY_VALUE_MAX] = {0};
@@ -291,7 +294,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 }
 
 NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
-    ALOGD("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
+    //ALOGD("%s in result.buff_id=%" PRIu64, __FUNCTION__, result.buff_id);
     tv_input_event_t event;
     event.capture_result.device_id = requestInfo.deviceId;
     event.capture_result.stream_id = requestInfo.streamId;
@@ -329,14 +332,16 @@ static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
             int32_t top, int32_t left, int32_t width, int32_t height)
 {
-    ALOGD("%s called", __func__);
-    if (!s_TvInputPriv->isInitialized) {
+    ALOGD("%s device id %d,called,%p", __func__,deviceId,s_TvInputPriv->mDev);
+    /*if (!s_TvInputPriv->isInitialized) {
         if (hin_dev_open(deviceId, TV_STREAM_TYPE_BUFFER_PRODUCER) < 0) {
             ALOGD("Open hdmi failed!!!\n");
             return -EINVAL;
         }
         requestInfo.deviceId = deviceId;
-    }
+    }*/
+
+        requestInfo.deviceId = deviceId;
     s_TvInputPriv->mDev->set_preview_info(top, left, width, height);
     return 0;
 }
@@ -371,7 +376,8 @@ static int tv_input_initialize(struct tv_input_device* dev,
         return -EINVAL;
     }
     s_TvInputPriv = (tv_input_private_t*)dev;
-
+//memset(s_TvInputPriv->mDev,0,sizeof(s_TvInputPriv->mDev));
+    s_TvInputPriv->mDev = NULL;
     s_TvInputPriv->isInitialized = false;
     s_TvInputPriv->callback = callback;
     
