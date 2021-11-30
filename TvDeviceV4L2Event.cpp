@@ -331,11 +331,13 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
     sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(1280,720,1);
     if(mCurformat->getFormatWeight() != formatSize->getFormatWeight() 
             && mCurformat->getFormatHeight() != formatSize->getFormatHeight()){
-        mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
+	if(mCallback_ != NULL)
+          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
         mCurformat->setFormatWeight(formatSize->getFormatWeight());
         mCurformat->setFormatHeight(formatSize->getFormatHeight());
     } else if (formatSize->getIsHdmiIn() == 0) {
-        mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
+	if(mCallback_ != NULL)
+          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     }
     usleep(200*1000);   
 #endif

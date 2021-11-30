@@ -421,7 +421,7 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode
         } else {
             ALOGD("width = %d", mBuffMgr->GetWidth(handle));
             ALOGD("height = %d", mBuffMgr->GetHeight(handle));
-            mBuffMgr->Lock(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &dataPtr);
+            mBuffMgr->LockLocked(handle, lockMode, 0, 0, mBuffMgr->GetWidth(handle), mBuffMgr->GetHeight(handle), &dataPtr);
         }
         ALOGD("planesNum = %d", mBuffMgr->GetNumPlanes(handle));
         for (int i = 0; i < mBuffMgr->GetNumPlanes(handle); i++) {
@@ -438,7 +438,11 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode
             }
         }
         fclose(fp);
-        mBuffMgr->Unlock(handle);
+	if (mode == 0) {
+            mBuffMgr->UnlockLocked(handle);
+        } else {
+            mBuffMgr->Unlock(handle);
+        }
         ALOGI("Write data success to %s",fileName);
         ret = 0;
     } else {

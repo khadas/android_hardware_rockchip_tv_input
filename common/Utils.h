@@ -49,7 +49,7 @@
 //#define DEFAULT_TVHAL_STREAM_FORMAT HAL_PIXEL_FORMAT_sRGB_A_8888    // 0x18 = 24
 //#define DEFAULT_TVHAL_STREAM_FORMAT HAL_PIXEL_FORMAT_FLEX_RGBA_8888    // 0x18 = 24
 
-#define DUMP_YUV_IMG
+//#define DUMP_YUV_IMG
 
 #define TV_INPUT_USER_FORMAT "vendor.tvinput.format"
 #define TV_INPUT_SKIP_FRAME "vendor.tvinput.skipframe"
