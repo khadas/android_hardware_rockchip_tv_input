@@ -26,7 +26,6 @@
 #include <map>
 #include "TvDeviceV4L2Event.h"
 #include "sideband/RTSidebandWindow.h"
-#include "common/Utils.h"
 #include "common/RgaCropScale.h"
 #include "common/HandleImporter.h"
 

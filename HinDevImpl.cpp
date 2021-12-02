@@ -41,8 +41,13 @@
 #define ALIGN_32(x) ((x + (BOUNDRY) - 1)& ~((BOUNDRY) - 1))
 #define ALIGN(b,w) (((b)+((w)-1))/(w)*(w))
 
-//static int sNewFrameWidth = DEFAULT_V4L2_STREAM_WIDTH;
-//static int sNewFrameHeight = DEFAULT_V4L2_STREAM_HEIGHT;
+const int kMaxDevicePathLen = 256;
+const char* kDevicePath = "/dev/";
+constexpr char kPrefix[] = "video";
+constexpr int kPrefixLen = sizeof(kPrefix) - 1;
+//constexpr int kDevicePrefixLen = sizeof(kDevicePath) + kPrefixLen + 1;
+constexpr char kHdmiNodeName[] = "rk_hdmirx";
+
 static v4l2_buf_type TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 static size_t getBufSize(int format, int width, int height)
 {
@@ -262,28 +267,62 @@ int HinDevImpl::init(int id,int initType) {
 
 int HinDevImpl::createDevice(int id, int& initWidth, int& initHeight,int& initFormat ){
     ALOGD("%s called", __func__);
-   if (!access(HIN_DEV_NODE_MAIN, F_OK|R_OK)) {
-        mHinDevHandle = open(HIN_DEV_NODE_MAIN, O_RDWR);
-        if (mHinDevHandle < 0)
-        {   
-            DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, mHinDevHandle,strerror(errno));
-            return -1;
-        } else {
-            DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_MAIN);
+    // Find existing /dev/video* devices
+    DIR* devdir = opendir(kDevicePath);
+    int videofd,ret;
+    if(devdir == 0) {
+        ALOGE("%s: cannot open %s! Exiting threadloop", __FUNCTION__, kDevicePath);
+        return -1;
+    }
+    struct dirent* de;
+    while ((de = readdir(devdir)) != 0) {
+        // Find external v4l devices that's existing before we start watching and add them
+        if (!strncmp(kPrefix, de->d_name, kPrefixLen)) {
+		std::string deviceId(de->d_name + kPrefixLen);
+		ALOGD(" v4l device %s found", de->d_name);
+		char v4l2DevicePath[kMaxDevicePathLen];
+		char v4l2DeviceDriver[16];
+		snprintf(v4l2DevicePath, kMaxDevicePathLen,"%s%s", kDevicePath, de->d_name);
+		videofd = open(v4l2DevicePath, O_RDWR);
+		if (videofd < 0){
+			DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, videofd,strerror(errno));
+			continue;
+		} else {
+			DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, v4l2DevicePath);
+			struct v4l2_capability cap;
+			ret = ioctl(videofd, VIDIOC_QUERYCAP, &cap);
+			if (ret < 0) {
+				DEBUG_PRINT(3, "VIDIOC_QUERYCAP Failed, error: %s", strerror(errno));
+				close(videofd);
+				continue;
+		}
+		snprintf(v4l2DeviceDriver, 16,"%s",cap.driver);
+		DEBUG_PRINT(3, "VIDIOC_QUERYCAP driver=%s,%s", cap.driver,v4l2DeviceDriver);
+		DEBUG_PRINT(3, "VIDIOC_QUERYCAP card=%s", cap.card);
+		DEBUG_PRINT(3, "VIDIOC_QUERYCAP version=%d", cap.version);
+		DEBUG_PRINT(3, "VIDIOC_QUERYCAP capabilities=0x%08x,0x%08x", cap.capabilities,V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+		DEBUG_PRINT(3, "VIDIOC_QUERYCAP device_caps=0x%08x", cap.device_caps);
+		if(!strncmp(kHdmiNodeName, v4l2DeviceDriver, sizeof(kHdmiNodeName)-1)){
+			mHinDevHandle =  videofd;
+			if ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
+				ALOGE("V4L2_CAP_VIDEO_CAPTURE is  a video capture device, capabilities: %x\n", cap.capabilities);
+					TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		}else if ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE)) {
+				ALOGE("V4L2_CAP_VIDEO_CAPTURE_MPLANE is  a video capture device, capabilities: %x\n", cap.capabilities);
+				TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+			}
+			break;
+		}else{
+			close(videofd);
+			DEBUG_PRINT(3, "isnot hdmirx,VIDIOC_QUERYCAP driver=%s", cap.driver);
+		}
+            }
         }
-    } else {
-        if (access(HIN_DEV_NODE_OTHERS, F_OK|R_OK) != 0) {
-            DEBUG_PRINT(3, "%s access failed!", HIN_DEV_NODE_OTHERS);
-            return -1;
-        }
-        mHinDevHandle = open(HIN_DEV_NODE_OTHERS, O_RDWR);
-        if (mHinDevHandle < 0)
-        {   
-            DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x [%s]", __FUNCTION__, __LINE__, mHinDevHandle,strerror(errno));
-            return -1;
-        } else {
-            DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, HIN_DEV_NODE_OTHERS);
-        }
+    }
+    closedir(devdir);
+    if (mHinDevHandle < 0){
+	DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
+	return -1;
     }
     if (get_format(0, initWidth, initHeight,initFormat) == 0)
     {   
@@ -345,16 +384,6 @@ int HinDevImpl::start_device()
     DEBUG_PRINT(1, "VIDIOC_QUERYCAP capabilities=0x%08x,0x%08x", mHinNodeInfo->cap.capabilities,V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
     DEBUG_PRINT(1, "VIDIOC_QUERYCAP device_caps=0x%08x", mHinNodeInfo->cap.device_caps);
 
-    if ((mHinNodeInfo->cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
-            ALOGE("V4L2_CAP_VIDEO_CAPTURE is  a video capture device, capabilities: %x\n"
-                             , mHinNodeInfo->cap.capabilities);
-        TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-     }else if ((mHinNodeInfo->cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE)) {
-                ALOGE("V4L2_CAP_VIDEO_CAPTURE_MPLANE is  a video capture device, capabilities: %x\n",
-                             mHinNodeInfo->cap.capabilities);
-            TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-     }
     mHinNodeInfo->reqBuf.type = TVHAL_V4L2_BUF_TYPE;
     mHinNodeInfo->reqBuf.memory = TVHAL_V4L2_BUF_MEMORY_TYPE;
     mHinNodeInfo->reqBuf.count = mBufferCount;
