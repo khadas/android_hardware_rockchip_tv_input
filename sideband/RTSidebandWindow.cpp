@@ -62,13 +62,15 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     }
 
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
-    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%lld", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage);
+    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%lld, type=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, info.streamType);
 
-    mVopRender = android::DrmVopRender::GetInstance();
-    if (!mVopRender->mInitialized) {
-        ready = mVopRender->initialize();
-        if (ready) {
-            mVopRender->detect();
+    if (info.streamType & TYPF_SIDEBAND_WINDOW) {
+        mVopRender = android::DrmVopRender::GetInstance();
+        if (!mVopRender->mInitialized) {
+            ready = mVopRender->initialize();
+            if (ready) {
+                mVopRender->detect();
+            }
         }
     }
 
@@ -169,7 +171,7 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
 }
 
 status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer, int type) {
-    DEBUG_PRINT(0, "%s %d in unregister", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s in type = %d", __FUNCTION__, type);
     // android::Mutex::Autolock _l(mLock);
     // type: 1 mean no register
     if (type == 0) {

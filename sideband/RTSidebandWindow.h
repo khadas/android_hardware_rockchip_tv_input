@@ -59,6 +59,7 @@ typedef struct RT_SIDEBAND_INFO {
     INT32 format;
     INT32 dataSpace;
     INT32 transform;
+    INT32 streamType;
 } RTSidebandInfo;
 
 class DrmVopRender;

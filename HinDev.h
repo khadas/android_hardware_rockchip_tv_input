@@ -71,11 +71,6 @@ enum State{
     STOPED,
 };
 
-enum FrameType{
-    TYPF_SIDEBAND_WINDOW = 0x1,
-    TYPE_STREAM_BUFFER_PRODUCER = 0x2,
-};
-
 typedef struct tv_preview_buff_app {
     int bufferFd;
     uint64_t bufferId;
@@ -111,11 +106,11 @@ class HinDevImpl {
         HinDevImpl();
         ~HinDevImpl();
         int init(int id,int type);
-        int createDevice(int id, int& initWidth, int& initHeight,int& initFormat);
+        int findDevice(int id, int& initWidth, int& initHeight,int& initFormat);
         int start();
         int stop();
         int pause();
-	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
+	   int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
         int set_rotation(int degree);
         int set_crop(int x, int y, int width, int height);
@@ -211,7 +206,7 @@ class HinDevImpl {
         void *mUser;
         bool mV4L2DataFormatConvert;
         int mPreviewBuffIndex = 0;
-	bool mFirstRequestCapture;
+	    bool mFirstRequestCapture;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

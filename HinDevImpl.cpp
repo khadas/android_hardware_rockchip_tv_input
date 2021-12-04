@@ -26,7 +26,6 @@
 #include "HinDev.h"
 #include <ui/GraphicBufferMapper.h>
 #include <ui/GraphicBuffer.h>
-#include <hardware/gralloc_rockchip.h>
 #include <linux/videodev2.h>
 
 #define V4L2_ROTATE_ID 0x980922
@@ -152,27 +151,27 @@ static int  getNativeWindowFormat(int format)
     int nativeFormat = -1;//HAL_PIXEL_FORMAT_YCbCr_422_I;
 
     switch(format){
-        case V4L2_PIX_FMT_YVU420:
-            nativeFormat = HAL_PIXEL_FORMAT_YV12;
-            break;
-        case V4L2_PIX_FMT_NV21:
-            nativeFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
-            break;
-        case V4L2_PIX_FMT_YUYV:
-            nativeFormat = HAL_PIXEL_FORMAT_YCbCr_422_I;
-            break;
-        case V4L2_PIX_FMT_RGB565:
-            nativeFormat = HAL_PIXEL_FORMAT_RGB_565;
-            break;
-        case V4L2_PIX_FMT_RGB24:
-            nativeFormat = HAL_PIXEL_FORMAT_RGB_888;
-            break;
-        case V4L2_PIX_FMT_RGB32:
-            nativeFormat = HAL_PIXEL_FORMAT_RGBA_8888;
-            break;
-        case V4L2_PIX_FMT_ABGR32:
-            nativeFormat = HAL_PIXEL_FORMAT_BGRA_8888;
-            break;
+    case V4L2_PIX_FMT_YVU420:
+        nativeFormat = HAL_PIXEL_FORMAT_YV12;
+        break;
+    case V4L2_PIX_FMT_NV21:
+        nativeFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+        break;
+    case V4L2_PIX_FMT_YUYV:
+        nativeFormat = HAL_PIXEL_FORMAT_YCbCr_422_I;
+        break;
+    case V4L2_PIX_FMT_RGB565:
+        nativeFormat = HAL_PIXEL_FORMAT_RGB_565;
+        break;
+    case V4L2_PIX_FMT_RGB24:
+        nativeFormat = HAL_PIXEL_FORMAT_RGB_888;
+        break;
+    case V4L2_PIX_FMT_RGB32:
+        nativeFormat = HAL_PIXEL_FORMAT_RGBA_8888;
+        break;
+    case V4L2_PIX_FMT_ABGR32:
+        nativeFormat = HAL_PIXEL_FORMAT_BGRA_8888;
+        break;
 	case V4L2_PIX_FMT_NV12:
 	    nativeFormat = HAL_PIXEL_FORMAT_YCrCb_NV12;
 	    break;
@@ -210,10 +209,10 @@ HinDevImpl::HinDevImpl()
 
     DEBUG_PRINT(1, "prop value : mDebugLevel=%d, mSkipFrame=%d, mDumpType=%d", mDebugLevel, mSkipFrame, mDumpType);
     mV4l2Event = new V4L2DeviceEvent();
+    mSidebandWindow = new RTSidebandWindow();
 }
 
 int HinDevImpl::init(int id,int initType) {
-    mV4l2Event->initialize(mHinDevHandle);
     mHinNodeInfo = (struct HinNodeInfo *) calloc (1, sizeof (struct HinNodeInfo));
     if (mHinNodeInfo == NULL)
     {
@@ -243,7 +242,6 @@ int HinDevImpl::init(int id,int initType) {
     mTvInputCB = NULL;
     mOpen = false;
 
-    mSidebandWindow = new RTSidebandWindow();
     /**
      *  init RTSidebandWindow
      */
@@ -254,8 +252,8 @@ int HinDevImpl::init(int id,int initType) {
     info.left = 0;
     info.width = mFrameWidth;
     info.height = mFrameHeight;
-    info.usage = GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_HW_CAMERA_WRITE
-        |  GRALLOC_USAGE_HW_VIDEO_ENCODER | RK_GRALLOC_USAGE_WITHIN_4G | RK_GRALLOC_USAGE_PHY_CONTIG_BUFFER;
+    info.streamType = mFrameType;
+    info.usage = STREAM_BUFFER_GRALLOC_USAGE;
     info.format = mPixelFormat; //0x15
 
     if(-1 == mSidebandWindow->init(info)) {
@@ -265,7 +263,7 @@ int HinDevImpl::init(int id,int initType) {
     return NO_ERROR;
 }
 
-int HinDevImpl::createDevice(int id, int& initWidth, int& initHeight,int& initFormat ){
+int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initFormat ) {
     ALOGD("%s called", __func__);
     // Find existing /dev/video* devices
     DIR* devdir = opendir(kDevicePath);
@@ -321,10 +319,10 @@ int HinDevImpl::createDevice(int id, int& initWidth, int& initHeight,int& initFo
     }
     closedir(devdir);
     if (mHinDevHandle < 0){
-	DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
-	return -1;
+    	DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
+    	return -1;
     }
-    if (get_format(0, initWidth, initHeight,initFormat) == 0)
+    if (get_format(0, initWidth, initHeight, initFormat) == 0)
     {   
         DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
         close(mHinDevHandle);
@@ -334,6 +332,8 @@ int HinDevImpl::createDevice(int id, int& initWidth, int& initHeight,int& initFo
     mFrameWidth = initWidth;
     mFrameHeight = initHeight;
     mBufferSize = mFrameWidth * mFrameHeight * 3/2;
+
+    mV4l2Event->initialize(mHinDevHandle);
     return 0;
 }
 int HinDevImpl::makeHwcSidebandHandle() {
@@ -467,10 +467,17 @@ int HinDevImpl::start()
 int HinDevImpl::stop()
 {
     ALOGD("%s %d", __FUNCTION__, __LINE__);
-    int ret;
-
+    int ret;       
+    mState = STOPED;
+    if(mWorkThread != NULL){
+        mWorkThread->requestExit();
+        mWorkThread.clear();
+        mWorkThread = NULL;
+    }
+    if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+        mSidebandWindow->clearVopArea();
+    }
     enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
-
     ret = ioctl (mHinDevHandle, VIDIOC_STREAMOFF, &bufType);
     if (ret < 0) {
         DEBUG_PRINT(3, "StopStreaming: Unable to stop capture: %s", strerror(errno));
@@ -478,28 +485,33 @@ int HinDevImpl::stop()
         DEBUG_PRINT(3, "StopStreaming: successful.");
     }
 
-    if(mWorkThread != NULL){
-        mWorkThread->requestExit();
-        mWorkThread.clear();
-        mWorkThread = NULL;
+    // cancel request buff
+    v4l2_requestbuffers req_buffers{};
+    req_buffers.type = TVHAL_V4L2_BUF_TYPE;
+    req_buffers.memory = TVHAL_V4L2_BUF_MEMORY_TYPE;
+    req_buffers.count = 0;
+    ret = ioctl(mHinDevHandle, VIDIOC_REQBUFS, &req_buffers);
+    if (ret < 0) {
+        ALOGE("%s: cancel REQBUFS failed: %s", __FUNCTION__, strerror(errno));
+    } else {
+        ALOGE("%s: cancel REQBUFS successful.", __FUNCTION__);
     }
-    mState = STOPED;
+
     release_buffer();
 
-    mSidebandWindow->clearVopArea();
     mDumpFrameCount = 3;
 
     mOpen = false;
     mFrameType = 0;
 
     if (mHinNodeInfo)
-        free (mHinNodeInfo);
+        free(mHinNodeInfo);
 
-    if (mV4l2Event)
-        mV4l2Event->closeEventThread();
+    // if (mV4l2Event)
+    //     mV4l2Event->closeEventThread();
 
-    if (mHinDevHandle >= 0)
-        close(mHinDevHandle);
+    // if (mHinDevHandle >= 0)
+    //     close(mHinDevHandle);
 
     DEBUG_PRINT(3, "============================= %s end ================================", __FUNCTION__);
     return ret;
@@ -549,7 +561,7 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
 
     while (ioctl(mHinDevHandle, VIDIOC_ENUM_FMT, &fmtdesc) != -1)
     {
-	formatList.push_back( fmtdesc.pixelformat);
+        formatList.push_back( fmtdesc.pixelformat);
         DEBUG_PRINT(3, "   V4L2 driver: idx=%d, \t desc:%s,format:0x%x", fmtdesc.index + 1, fmtdesc.description, fmtdesc.pixelformat);
         fmtdesc.index++;
     }
@@ -557,16 +569,16 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
     format.type = TVHAL_V4L2_BUF_TYPE;
     vector<int>::iterator it;
     for(it = formatList.begin();it != formatList.end();it++){
-	format.fmt.pix.pixelformat = (int)*it;
-	if (ioctl(mHinDevHandle, VIDIOC_TRY_FMT, &format) != -1)
-	{
-		DEBUG_PRINT(3, "V4L2 driver try: width:%d,height:%d,format:0x%x,0x%x", format.fmt.pix.width, format.fmt.pix.height,format.fmt.pix.pixelformat,V4L2_PIX_FMT_RGB24);
-		hdmi_in_width =  format.fmt.pix.width;
-		hdmi_in_height = format.fmt.pix.height;
-		mPixelFormat = format.fmt.pix.pixelformat;
-		initFormat = getNativeWindowFormat(format.fmt.pix.pixelformat);//V4L2_PIX_FMT_BGR24;
-		break;
-	}
+    	format.fmt.pix.pixelformat = (int)*it;
+    	if (ioctl(mHinDevHandle, VIDIOC_TRY_FMT, &format) != -1)
+    	{
+    		DEBUG_PRINT(3, "V4L2 driver try: width:%d,height:%d,format:0x%x,0x%x", format.fmt.pix.width, format.fmt.pix.height,format.fmt.pix.pixelformat,V4L2_PIX_FMT_RGB24);
+    		hdmi_in_width =  format.fmt.pix.width;
+    		hdmi_in_height = format.fmt.pix.height;
+    		mPixelFormat = format.fmt.pix.pixelformat;
+    		initFormat = getNativeWindowFormat(format.fmt.pix.pixelformat);//V4L2_PIX_FMT_BGR24;
+    		break;
+    	}
     }
     /*int err = ioctl(mHinDevHandle, VIDIOC_G_FMT, &format);
     if (err < 0)
@@ -595,7 +607,7 @@ int HinDevImpl::set_mode(int displayMode)
 
 int HinDevImpl::set_format(int width, int height, int color_format)
 {
-    ALOGD("[%s %d] width=%d, height=%d, color_format=%d", __FUNCTION__, __LINE__, width, height, color_format);
+    ALOGD("[%s %d] width=%d, height=%d, color_format=%d, mPixelFormat=%d", __FUNCTION__, __LINE__, width, height, color_format, mPixelFormat);
     Mutex::Autolock autoLock(mLock);
     if (mOpen == true)
         return NO_ERROR;
@@ -603,12 +615,12 @@ int HinDevImpl::set_format(int width, int height, int color_format)
 
     mFrameWidth = width;
     mFrameHeight = height;
-    mHinNodeInfo->width = mFrameWidth;
-    mHinNodeInfo->height = mFrameHeight;
+    mHinNodeInfo->width = width;
+    mHinNodeInfo->height = height;
     mHinNodeInfo->formatIn = mPixelFormat;
     mHinNodeInfo->format.type = TVHAL_V4L2_BUF_TYPE;
-    mHinNodeInfo->format.fmt.pix.width = mFrameWidth;
-    mHinNodeInfo->format.fmt.pix.height = mFrameHeight;
+    mHinNodeInfo->format.fmt.pix.width = width;
+    mHinNodeInfo->format.fmt.pix.height = height;
     mHinNodeInfo->format.fmt.pix.pixelformat = mPixelFormat;
 
     ret = ioctl(mHinDevHandle, VIDIOC_S_FMT, &mHinNodeInfo->format);
@@ -795,10 +807,6 @@ int HinDevImpl::aquire_buffer()
 int HinDevImpl::release_buffer()
 {
     DEBUG_PRINT(mDebugLevel, "%s %d", __FUNCTION__, __LINE__);
-    for (int i=0; i<mBufferCount; i++) {
-        mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i], 0);
-    }
-
     if (mSidebandHandle) {
         mSidebandWindow->freeBuffer(&mSidebandHandle, 0);
         mSidebandHandle = NULL;
@@ -808,11 +816,18 @@ int HinDevImpl::release_buffer()
         if (!mPreviewRawHandle.empty()) {
             for (int i=0; i<mPreviewRawHandle.size(); i++) {
                 mSidebandWindow->freeBuffer(&mPreviewRawHandle[i].outHandle, 1);
+                mPreviewRawHandle[i].outHandle = NULL;
+                mHinNodeInfo->buffer_handle_poll[i] = NULL;
             }
             mPreviewRawHandle.clear();
         }
+    } else {
+        for (int i=0; i<mBufferCount; i++) {
+            mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i], 0);
+            mHinNodeInfo->buffer_handle_poll[i] = NULL;
+        }
     }
-    return -1;
+    return 0;
 }
 
 int HinDevImpl::set_preview_info(int top, int left, int width, int height) {
@@ -841,7 +856,7 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
     //ALOGD("rawHandle = %p,bufferId=%lld,%lld" PRIu64, rawHandle,(long long)bufferId,(long long)mPreviewRawHandle[0].bufferId);
     if ( mFirstRequestCapture && mPreviewRawHandle[0].bufferId == bufferId) {
         ALOGD("first request_capture, ignore it.");
-	mFirstRequestCapture = false;
+	    mFirstRequestCapture = false;
         // mPreviewBuffThread = new PreviewBuffThread(this);
         // mPreviewThreadRunning = true;
         //mPreviewBuffIndex = 0;
@@ -864,7 +879,10 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
 }
 
 void HinDevImpl::wrapCaptureResultAndNotify(uint64_t buffId,buffer_handle_t handle) {
-    if ( mFirstRequestCapture && mPreviewRawHandle[0].bufferId == buffId) {
+    if (mState == STOPED) {
+        return;
+    };
+    if (mFirstRequestCapture && mPreviewRawHandle[0].bufferId == buffId) {
         ALOGD("first wrapCaptureResultAndNotify, ignore it.");
         mFirstRequestCapture = false;
         return;
