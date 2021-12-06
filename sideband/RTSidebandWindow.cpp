@@ -110,8 +110,8 @@ status_t RTSidebandWindow::start() {
 
 status_t RTSidebandWindow::stop() {
     DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
-    mVopRender->deinitialize();
     if (mVopRender) {
+        mVopRender->deinitialize();
         delete mVopRender;
         mVopRender = NULL;
     }

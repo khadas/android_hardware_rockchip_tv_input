@@ -33,7 +33,7 @@ int V4L2DeviceEvent::initialize(int fd){
     //subscribeEvent(V4L2_EVENT_MOTION_DET);
 
     mV4L2EventThread = new V4L2EventThread(mFd,callback_);
-    mV4L2EventThread->v4l2pipe();
+    //mV4L2EventThread->v4l2pipe();
     mV4L2EventThread->run("Tvinput_Ev", android::PRIORITY_DISPLAY);
     return 0;
 }
@@ -109,7 +109,6 @@ int V4L2DeviceEvent::dequeueEvent(struct v4l2_event *event)
         ALOGE("error dequeuing event");
         return ret;
     }
-callback_(111,222,333);
     return ret;
 }
 
@@ -248,18 +247,18 @@ void V4L2DeviceEvent::V4L2EventThread::openDevice()
     memset(video_name, 0, sizeof(video_name));
     strcat(video_name, "/dev/v4l-subdev2");
 
-    mCamFd = open(video_name, O_RDWR);
+    /*mCamFd = open(video_name, O_RDWR);
     if (mCamFd < 0) {
         ALOGE("open %s failed,erro=%s",video_name,strerror(errno));
     } else {
         ALOGD("open %s success,fd=%d",video_name,mCamFd);
-    }
+    }*/
 }
  void V4L2DeviceEvent::V4L2EventThread::closeDevice()
 {
     ALOGI("close device");
     if(mCamFd > 0) {
-        close(mCamFd);
+    //    close(mCamFd);
     }
 }
 bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
@@ -274,17 +273,14 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
 	fds[1].events = POLLPRI;
     struct v4l2_event ev;
     CLEAR(ev);
-
 		if (poll(fds, 2, 5000) < 0) {
 			ALOGD("%d: poll failed: %s\n", mVideoFd, strerror(errno));
 			return false;
 		}
-
 		if (fds[0].revents & POLLIN) {
 			ALOGD("%d: quit message received\n", mVideoFd);
 			return false;
 		}
-
 		if (fds[1].revents & POLLPRI) {
 			
 			if (ioctl(fds[1].fd, VIDIOC_DQEVENT, &ev) == 0) {
@@ -308,38 +304,37 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
 			}
 		}
 #else
-
-    /*struct v4l2_control control;
+    struct v4l2_control control;
     memset(&control, 0, sizeof(struct v4l2_control));
     control.id = V4L2_CID_DV_RX_POWER_PRESENT;
-    int err = ioctl(mCamFd, VIDIOC_G_CTRL, &control);
+    int err = ioctl(mVideoFd, VIDIOC_G_CTRL, &control);
     if (err < 0) {
-        ALOGD("Set POWER_PRESENT failed ,%d(%s)", errno, strerror(errno));
+        ALOGV("Set POWER_PRESENT failed ,%d(%s)", errno, strerror(errno));
     }
-
     unsigned int noSignalAndSync = 0;
-    ioctl(mCamFd, VIDIOC_G_INPUT, &noSignalAndSync);
+    ioctl(mVideoFd, VIDIOC_G_INPUT, &noSignalAndSync);
     ALOGV("noSignalAndSync ? %s",noSignalAndSync?"YES":"NO");
 
     struct v4l2_dv_timings dv_timings;
     memset(&dv_timings, 0 ,sizeof(struct v4l2_dv_timings));
-    err = ioctl(mCamFd, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
+    err = ioctl(mVideoFd, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
     if (err < 0) {
         ALOGD("Set VIDIOC_SUBDEV_QUERY_DV_TIMINGS failed ,%d(%s)", errno, strerror(errno));
     }
-    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,control.value && !noSignalAndSync);*/
-    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(1280,720,1);
+    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,control.value && !noSignalAndSync);
+    //sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(1280,720,1);
+    //ALOGD("FormatWeight=%d,FormatHeigh=%d,%d",formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     if(mCurformat->getFormatWeight() != formatSize->getFormatWeight() 
             && mCurformat->getFormatHeight() != formatSize->getFormatHeight()){
 	if(mCallback_ != NULL)
-          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
+          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),1);
         mCurformat->setFormatWeight(formatSize->getFormatWeight());
         mCurformat->setFormatHeight(formatSize->getFormatHeight());
     } else if (formatSize->getIsHdmiIn() == 0) {
-	if(mCallback_ != NULL)
-          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
+	//if(mCallback_ != NULL)
+        //  mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     }
-    usleep(200*1000);   
+    usleep(500*1000);   
 #endif
 	return true;
 }

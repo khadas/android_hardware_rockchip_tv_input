@@ -151,27 +151,27 @@ static int  getNativeWindowFormat(int format)
     int nativeFormat = -1;//HAL_PIXEL_FORMAT_YCbCr_422_I;
 
     switch(format){
-    case V4L2_PIX_FMT_YVU420:
-        nativeFormat = HAL_PIXEL_FORMAT_YV12;
-        break;
-    case V4L2_PIX_FMT_NV21:
-        nativeFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
-        break;
-    case V4L2_PIX_FMT_YUYV:
-        nativeFormat = HAL_PIXEL_FORMAT_YCbCr_422_I;
-        break;
-    case V4L2_PIX_FMT_RGB565:
-        nativeFormat = HAL_PIXEL_FORMAT_RGB_565;
-        break;
-    case V4L2_PIX_FMT_RGB24:
-        nativeFormat = HAL_PIXEL_FORMAT_RGB_888;
-        break;
-    case V4L2_PIX_FMT_RGB32:
-        nativeFormat = HAL_PIXEL_FORMAT_RGBA_8888;
-        break;
-    case V4L2_PIX_FMT_ABGR32:
-        nativeFormat = HAL_PIXEL_FORMAT_BGRA_8888;
-        break;
+        case V4L2_PIX_FMT_YVU420:
+            nativeFormat = HAL_PIXEL_FORMAT_YV12;
+            break;
+        case V4L2_PIX_FMT_NV21:
+            nativeFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+            break;
+        case V4L2_PIX_FMT_YUYV:
+            nativeFormat = HAL_PIXEL_FORMAT_YCbCr_422_I;
+            break;
+        case V4L2_PIX_FMT_RGB565:
+            nativeFormat = HAL_PIXEL_FORMAT_RGB_565;
+            break;
+        case V4L2_PIX_FMT_RGB24:
+            nativeFormat = HAL_PIXEL_FORMAT_BGR_888;
+            break;
+        case V4L2_PIX_FMT_RGB32:
+            nativeFormat = HAL_PIXEL_FORMAT_RGBA_8888;
+            break;
+        case V4L2_PIX_FMT_ABGR32:
+            nativeFormat = HAL_PIXEL_FORMAT_BGRA_8888;
+            break;
 	case V4L2_PIX_FMT_NV12:
 	    nativeFormat = HAL_PIXEL_FORMAT_YCrCb_NV12;
 	    break;

@@ -96,8 +96,8 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
 };
 
 V4L2EventCallBack hinDevEventCallback(int width, int height,int isHdmiIn) {
-    if (s_HinDevStreamWidth == width || s_HinDevStreamHeight == height||true)
-        return 0;
+    if (s_HinDevStreamWidth == width || s_HinDevStreamHeight == height)
+       return 0;
     ALOGE("%s %d,%d,%d", __FUNCTION__, width,height,isHdmiIn);
     tv_input_event_t event;
     event.device_info.device_id = SOURCE_HDMI1;

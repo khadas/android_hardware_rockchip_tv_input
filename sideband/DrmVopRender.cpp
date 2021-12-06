@@ -73,6 +73,7 @@ bool DrmVopRender::initialize()
 
 void DrmVopRender::deinitialize()
 {
+    if(!mInitialized) return;
     for (int i = 0; i < OUTPUT_MAX; i++) {
         resetOutput(i);
     }
