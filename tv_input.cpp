@@ -45,7 +45,6 @@ typedef enum tv_input_source_type {
     SOURCE_MAX,
 } tv_input_source_t;
 
-
 typedef struct tv_input_private {
     tv_input_device_t device;
 
@@ -327,14 +326,11 @@ static int tv_input_cancel_capture(struct tv_input_device*, int, int, uint32_t)
 }
 
 static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
-            int32_t top, int32_t left, int32_t width, int32_t height)
+            int32_t top, int32_t left, int32_t width, int32_t height, int32_t extInfo)
 {
     ALOGD("%s device id %d,called,%p", __func__,deviceId,s_TvInputPriv->mDev);
     if (s_TvInputPriv && s_TvInputPriv->mDev && !s_TvInputPriv->isInitialized) {
-        char prop_value[PROPERTY_VALUE_MAX] = {0};
-        property_get("vendor.tvinput.buff_type", prop_value, "1");
-        s_TvInputPriv->mStreamType = ((int)atoi(prop_value) == 1) ? TV_STREAM_TYPE_BUFFER_PRODUCER : TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-        if (s_TvInputPriv->mDev->init(deviceId, s_TvInputPriv->mStreamType)!= 0) {
+        if (s_TvInputPriv->mDev->init(deviceId, extInfo)!= 0) {
             ALOGE("hinDevImpl->init %d failed!", deviceId);
             delete s_TvInputPriv->mDev;
             return -1;
