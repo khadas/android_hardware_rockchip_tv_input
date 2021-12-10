@@ -110,8 +110,9 @@ class HinDevImpl {
         int start();
         int stop();
         int pause();
-	   int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
+	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
+        int get_HdmiIn();
         int set_rotation(int degree);
         int set_crop(int x, int y, int width, int height);
         int get_hin_crop(int *x, int *y, int *width, int *height);
@@ -124,7 +125,7 @@ class HinDevImpl {
         int set_preview_callback(NotifyQueueDataCallback callback);
         int set_data_callback(V4L2EventCallBack callback);
         int set_frame_rate(int frameRate);
-        int get_current_sourcesize(int * width,int * height);
+        int get_current_sourcesize(int&  width,int&  height,int& format);
         int set_screen_mode(int mode);
         int start_device();
         int stop_device();
@@ -176,6 +177,7 @@ class HinDevImpl {
         int mFrameWidth;
         int mFrameHeight;
         int mBufferSize;
+        bool mIsHdmiIn;
         unsigned int flex_ratio;
         unsigned int flex_original;
         int mFramecount = 0;

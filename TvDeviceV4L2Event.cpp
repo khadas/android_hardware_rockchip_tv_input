@@ -15,7 +15,6 @@ using android::NO_ERROR;
 ////////////////////////////////////////////////////////////////////
 //                          PUBLIC METHODS
 ////////////////////////////////////////////////////////////////////
-
 V4L2DeviceEvent::V4L2DeviceEvent()
 {
 }
@@ -29,11 +28,10 @@ V4L2DeviceEvent::~V4L2DeviceEvent()
 }
 int V4L2DeviceEvent::initialize(int fd){
     mFd = fd;
-    //subscribeEvent(V4L2_EVENT_SOURCE_CHANGE);
-    //subscribeEvent(V4L2_EVENT_MOTION_DET);
-
+    subscribeEvent(V4L2_EVENT_SOURCE_CHANGE);
+    subscribeEvent(V4L2_EVENT_CTRL);
     mV4L2EventThread = new V4L2EventThread(mFd,callback_);
-    //mV4L2EventThread->v4l2pipe();
+    mV4L2EventThread->v4l2pipe();
     mV4L2EventThread->run("Tvinput_Ev", android::PRIORITY_DISPLAY);
     return 0;
 }
@@ -43,10 +41,6 @@ void V4L2DeviceEvent::closeEventThread() {
         mV4L2EventThread->join();
         mV4L2EventThread.clear();
     }
-}
-int V4L2DeviceEvent::getSubDevFd()
-{
-    return mV4L2EventThread->getFd();
 }
 int V4L2DeviceEvent::subscribeEvent(int event)
 {
@@ -61,7 +55,7 @@ int V4L2DeviceEvent::subscribeEvent(int event)
 
     CLEAR(sub);
     sub.type = event;
-
+    if(event == V4L2_EVENT_CTRL)sub.id = V4L2_CID_DV_RX_POWER_PRESENT;
     ret = ioctl(mFd, VIDIOC_SUBSCRIBE_EVENT, &sub);
     if (ret < 0) {
         ALOGE("error subscribing event %x: %s", event, strerror(errno));
@@ -141,7 +135,6 @@ status_t V4L2DeviceEvent::setControl(int aControlNum, const int value, const cha
 
     if (ioctl(mFd, VIDIOC_S_EXT_CTRLS, &controls) == 0)
         return NO_ERROR;
-
     if (ioctl(mFd, VIDIOC_S_CTRL, &control) == 0)
         return NO_ERROR;
 
@@ -234,11 +227,10 @@ V4L2DeviceEvent::V4L2EventThread::~V4L2EventThread() {
 }
 bool V4L2DeviceEvent::V4L2EventThread::v4l2pipe() {
     ALOGI("@%s", __FUNCTION__);
-    openDevice();
     if (pipe(pipefd) < 0) {
-		ALOGE("pipe failed: %s\n", strerror(errno));
-		return false;
-	}
+	ALOGE("pipe failed: %s\n", strerror(errno));
+	return false;
+    }
     return true;
 }
 void V4L2DeviceEvent::V4L2EventThread::openDevice()
@@ -246,97 +238,97 @@ void V4L2DeviceEvent::V4L2EventThread::openDevice()
     char video_name[64];
     memset(video_name, 0, sizeof(video_name));
     strcat(video_name, "/dev/v4l-subdev2");
-
-    /*mCamFd = open(video_name, O_RDWR);
-    if (mCamFd < 0) {
-        ALOGE("open %s failed,erro=%s",video_name,strerror(errno));
-    } else {
-        ALOGD("open %s success,fd=%d",video_name,mCamFd);
-    }*/
 }
- void V4L2DeviceEvent::V4L2EventThread::closeDevice()
-{
-    ALOGI("close device");
-    if(mCamFd > 0) {
-    //    close(mCamFd);
-    }
-}
-bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
-//ALOGI("@%s", __FUNCTION__);
-#if 0
-    struct pollfd fds[2];
-    //fds.events = POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLRDBAND | POLLPRI;
-	fds[0].fd = pipefd[0];
-	fds[0].events = POLLIN;
-
-	fds[1].fd = mVideoFd;
-	fds[1].events = POLLPRI;
-    struct v4l2_event ev;
-    CLEAR(ev);
-		if (poll(fds, 2, 5000) < 0) {
-			ALOGD("%d: poll failed: %s\n", mVideoFd, strerror(errno));
-			return false;
-		}
-		if (fds[0].revents & POLLIN) {
-			ALOGD("%d: quit message received\n", mVideoFd);
-			return false;
-		}
-		if (fds[1].revents & POLLPRI) {
-			
-			if (ioctl(fds[1].fd, VIDIOC_DQEVENT, &ev) == 0) {
-				switch (ev.type) {
-				case V4L2_EVENT_SOURCE_CHANGE:
-					ALOGD("%d: source change event\n", mVideoFd);
-
-					break;
-				case V4L2_EVENT_MOTION_DET:
-					ALOGD("%d: motion detection event seq=%u\n", mVideoFd,
-							ev.sequence );
-				
-					break;
-				default:
-					ALOGD("%d: unknown event\n", mVideoFd);
-					break;
-				}
-			} else {
-				ALOGD("%d: VIDIOC_DQEVENT failed: %s\n",
-					mVideoFd, strerror(errno));
-			}
-		}
-#else
+/*int V4L2DeviceEvent::V4L2EventThread::getHdmiIn(bool enforce){
+    if(enforce && mCurformat->getIsHdmiIn()) return mCurformat->getIsHdmiIn();
     struct v4l2_control control;
     memset(&control, 0, sizeof(struct v4l2_control));
     control.id = V4L2_CID_DV_RX_POWER_PRESENT;
     int err = ioctl(mVideoFd, VIDIOC_G_CTRL, &control);
     if (err < 0) {
         ALOGV("Set POWER_PRESENT failed ,%d(%s)", errno, strerror(errno));
+        return UNKNOWN_ERROR;
     }
     unsigned int noSignalAndSync = 0;
     ioctl(mVideoFd, VIDIOC_G_INPUT, &noSignalAndSync);
-    ALOGV("noSignalAndSync ? %s",noSignalAndSync?"YES":"NO");
-
+    ALOGI("noSignalAndSync ? %s",noSignalAndSync?"YES":"NO");
+    mCurformat->setIsHdmiIn(control.value && !noSignalAndSync);
+    ALOGD("======================= ,%d",mCurformat->getIsHdmiIn());
+    return mCurformat->getIsHdmiIn();
+}
+int V4L2DeviceEvent::V4L2EventThread::getFormat(){
     struct v4l2_dv_timings dv_timings;
     memset(&dv_timings, 0 ,sizeof(struct v4l2_dv_timings));
-    err = ioctl(mVideoFd, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
+    int err = ioctl(mVideoFd, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
     if (err < 0) {
         ALOGD("Set VIDIOC_SUBDEV_QUERY_DV_TIMINGS failed ,%d(%s)", errno, strerror(errno));
+	return UNKNOWN_ERROR;
     }
-    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,control.value && !noSignalAndSync);
-    //sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(1280,720,1);
+    sp<V4L2DeviceEvent::FormartSize> formatSize = new V4L2DeviceEvent::FormartSize(dv_timings.bt.width,dv_timings.bt.height,true);
     //ALOGD("FormatWeight=%d,FormatHeigh=%d,%d",formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     if(mCurformat->getFormatWeight() != formatSize->getFormatWeight() 
             && mCurformat->getFormatHeight() != formatSize->getFormatHeight()){
-	if(mCallback_ != NULL)
-          mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),1);
+        getHdmiIn(false);
+        if(mCallback_ != NULL)
+          mCallback_(formatSize->getFormatWeight(),formatSize->getFormatHeight(),mCurformat->getFormat(),mCurformat->getIsHdmiIn());
         mCurformat->setFormatWeight(formatSize->getFormatWeight());
         mCurformat->setFormatHeight(formatSize->getFormatHeight());
-    } else if (formatSize->getIsHdmiIn() == 0) {
-	//if(mCallback_ != NULL)
-        //  mCallback_( formatSize->getFormatWeight(),formatSize->getFormatHeight(),formatSize->getIsHdmiIn());
     }
-    usleep(500*1000);   
-#endif
-	return true;
+    return NO_ERROR;
+}*/
+void V4L2DeviceEvent::V4L2EventThread::closeDevice()
+{
+    ALOGI("close device");
+    if (write(pipefd[1], "q", 1) != 1) {}
+    close(pipefd[0]);
+    close(pipefd[1]);
+}
+bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
+    ALOGV("@%s", __FUNCTION__);
+    struct pollfd fds[2];
+    //int retry = 3;
+    //fds.events = POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLRDBAND | POLLPRI;
+    fds[0].fd = pipefd[0];
+    fds[0].events = POLLIN;
+
+    fds[1].fd = mVideoFd;
+    fds[1].events = POLLPRI;
+    struct v4l2_event ev;
+    CLEAR(ev);
+    if (poll(fds, 2, 5000) < 0) {
+	ALOGD("%d: poll failed: %s\n", mVideoFd, strerror(errno));
+	return false;
+    }
+    if (fds[0].revents & POLLIN) {
+	ALOGD("%d: quit message received\n", mVideoFd);
+	return false;
+    }
+    if (fds[1].revents & POLLPRI) {
+	if (ioctl(fds[1].fd, VIDIOC_DQEVENT, &ev) == 0) {
+		switch (ev.type) {
+		case V4L2_EVENT_SOURCE_CHANGE:
+			ALOGD("%d: V4L2_EVENT_SOURCE_CHANGE event\n", mVideoFd);
+			/*retry = 3;
+			while(retry-- >= 0){
+			  if(!getFormat()) break;
+			  else usleep(100*1000);
+			}*/
+			break;
+		case V4L2_EVENT_CTRL:
+			ALOGD("%d:  V4L2_EVENT_CTRL event \n", mVideoFd );
+		        //getHdmiIn(false);
+			break;
+		default:
+			ALOGD("%d: unknown event\n", mVideoFd);
+			break;
+		}
+		if(mCallback_ != NULL)
+                  mCallback_(ev.type);
+	} else {
+		ALOGD("%d: VIDIOC_DQEVENT failed: %s\n",mVideoFd, strerror(errno));
+	}
+    }
+    return true;
 }
 ////////////////////////////////////////////////////////////////////
 //                          PRIVATE METHODS

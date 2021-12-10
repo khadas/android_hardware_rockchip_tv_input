@@ -94,24 +94,33 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
     }
 };
 
-V4L2EventCallBack hinDevEventCallback(int width, int height,int isHdmiIn) {
-    if (s_HinDevStreamWidth == width || s_HinDevStreamHeight == height)
-       return 0;
-    ALOGE("%s %d,%d,%d", __FUNCTION__, width,height,isHdmiIn);
+V4L2EventCallBack hinDevEventCallback(int event_type) {
+    ALOGD("%s event type: %d", __FUNCTION__,event_type);
+    bool isHdmiIn;
     tv_input_event_t event;
+    if (s_TvInputPriv && !s_TvInputPriv->isOpened) {
+       ALOGE("%s The device is not open ", __FUNCTION__);
+       return 0;
+    }
+    switch (event_type) {
+	case V4L2_EVENT_CTRL:
+             isHdmiIn = s_TvInputPriv->mDev->get_HdmiIn();
+	     if(!isHdmiIn)
+		event.type = TV_INPUT_EVENT_DEVICE_UNAVAILABLE;
+	     else
+		event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
+             break;
+        case V4L2_EVENT_SOURCE_CHANGE:
+             isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
+             event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
+	     break;
+    }
+    ALOGE("%s width:%d,height:%d,format:0x%x,%d", __FUNCTION__,s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,isHdmiIn);
     event.device_info.device_id = SOURCE_HDMI1;
     event.device_info.type = TV_INPUT_TYPE_HDMI;
     event.device_info.audio_type = AUDIO_DEVICE_NONE;
     event.device_info.audio_address = NULL;
-    if (isHdmiIn == 1) {
-        event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
-        s_HinDevStreamWidth = width;
-        s_HinDevStreamHeight = height;
-    } else {
-        event.type = TV_INPUT_EVENT_DEVICE_UNAVAILABLE;
-    }
     s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
-
     return 0;
 }
 
@@ -149,11 +158,12 @@ static int hin_dev_open(int deviceId, int type)
             s_TvInputPriv->mDev = hinDevImpl;
             s_TvInputPriv->mDev->set_data_callback((V4L2EventCallBack)hinDevEventCallback);
             if (s_TvInputPriv->mDev->findDevice(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat)!= 0) {
-                ALOGE("hinDevImpl->init %d failed!", deviceId);
+                ALOGE("hinDevImpl->findDevice %d failed!", deviceId);
                 delete s_TvInputPriv->mDev;
+	        s_TvInputPriv->mDev = nullptr;
                 return -1;
             }
-            ALOGD("hinDevImpl->init %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
+            ALOGD("hinDevImpl->findDevice %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
             s_TvInputPriv->isOpened = true;
         }
     }
@@ -309,7 +319,7 @@ NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
 static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
             int stream_id, uint64_t buff_id, buffer_handle_t buffer, uint32_t seq) {
     ALOGV("%s called,req=%u", __func__,seq);
-    if (s_TvInputPriv && s_TvInputPriv->mDev && buffer != nullptr) {
+    if (s_TvInputPriv && s_TvInputPriv->isInitialized && s_TvInputPriv->mDev && buffer != nullptr) {
         //requestInfo.seq = seq;
         s_TvInputPriv->mDev->set_preview_callback((NotifyQueueDataCallback)dataCallback);
         s_TvInputPriv->mDev->request_capture(buffer, buff_id);
@@ -332,7 +342,6 @@ static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
     if (s_TvInputPriv && s_TvInputPriv->mDev && !s_TvInputPriv->isInitialized) {
         if (s_TvInputPriv->mDev->init(deviceId, extInfo)!= 0) {
             ALOGE("hinDevImpl->init %d failed!", deviceId);
-            delete s_TvInputPriv->mDev;
             return -1;
         }
         s_TvInputPriv->isInitialized = true;
@@ -349,7 +358,7 @@ static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
 static int tv_input_set_preview_buffer(buffer_handle_t rawHandle, uint64_t bufferId)
 {
     ALOGD("%s called", __func__);
-        if (!s_TvInputPriv->isInitialized) {
+    if (!s_TvInputPriv->isInitialized || !s_TvInputPriv->mDev) {
     	return -EINVAL;
     }
     s_TvInputPriv->mDev->set_preview_buffer(rawHandle, bufferId);

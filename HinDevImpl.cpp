@@ -213,6 +213,10 @@ HinDevImpl::HinDevImpl()
 }
 
 int HinDevImpl::init(int id,int initType) {
+    if(get_HdmiIn() <= 0 ){
+	DEBUG_PRINT(3, "[%s %d] hdmi isnt in", __FUNCTION__, __LINE__);
+        return NO_MEMORY;
+    }
     mHinNodeInfo = (struct HinNodeInfo *) calloc (1, sizeof (struct HinNodeInfo));
     if (mHinNodeInfo == NULL)
     {
@@ -322,6 +326,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     	DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
     	return -1;
     }
+    mV4l2Event->initialize(mHinDevHandle);
     if (get_format(0, initWidth, initHeight, initFormat) == 0)
     {   
         DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
@@ -333,7 +338,6 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     mFrameHeight = initHeight;
     mBufferSize = mFrameWidth * mFrameHeight * 3/2;
 
-    mV4l2Event->initialize(mHinDevHandle);
     return 0;
 }
 int HinDevImpl::makeHwcSidebandHandle() {
@@ -360,7 +364,8 @@ HinDevImpl::~HinDevImpl()
     if (mSidebandWindow) {
         mSidebandWindow->stop();
     }
-
+    if (mV4l2Event)
+        mV4l2Event->closeEventThread();
     if (mHinNodeInfo)
         free (mHinNodeInfo);
     if (mHinDevHandle >= 0)
@@ -507,11 +512,11 @@ int HinDevImpl::stop()
     if (mHinNodeInfo)
         free(mHinNodeInfo);
 
-    // if (mV4l2Event)
-    //     mV4l2Event->closeEventThread();
+    //if (mV4l2Event)
+    //    mV4l2Event->closeEventThread();
 
-    // if (mHinDevHandle >= 0)
-    //     close(mHinDevHandle);
+    //if (mHinDevHandle >= 0)
+    //    close(mHinDevHandle);
 
     DEBUG_PRINT(3, "============================= %s end ================================", __FUNCTION__);
     return ret;
@@ -540,20 +545,6 @@ int HinDevImpl::set_data_callback(V4L2EventCallBack callback)
 
 int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat)
 {
-    /*struct v4l2_dv_timings dv_timings;
-    memset(&dv_timings, 0, sizeof(struct v4l2_dv_timings));
-    int err = ioctl(fd, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
-    if (err < 0)
-    {
-        ALOGD("Set VIDIOC_SUBDEV_QUERY_DV_TIMINGS failed ,%d(%s)", errno, strerror(errno));
-    }
-    else
-    {
-        hdmi_in_width = dv_timings.bt.width;
-        hdmi_in_height = dv_timings.bt.height;
-        DEBUG_PRINT(3, "after %s get from VIDIOC_SUBDEV_QUERY_DV_TIMINGS width =%d", __FUNCTION__, dv_timings.bt.width);
-        DEBUG_PRINT(3, "after %s get from VIDIOC_SUBDEV_QUERY_DV_TIMINGS height =%d", __FUNCTION__, dv_timings.bt.height);
-    }*/
     std::vector<int> formatList;
     struct v4l2_fmtdesc fmtdesc;
     fmtdesc.index = 0;
@@ -572,7 +563,7 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
     	format.fmt.pix.pixelformat = (int)*it;
     	if (ioctl(mHinDevHandle, VIDIOC_TRY_FMT, &format) != -1)
     	{
-    		DEBUG_PRINT(3, "V4L2 driver try: width:%d,height:%d,format:0x%x,0x%x", format.fmt.pix.width, format.fmt.pix.height,format.fmt.pix.pixelformat,V4L2_PIX_FMT_RGB24);
+    		DEBUG_PRINT(3, "V4L2 driver try: width:%d,height:%d,format:0x%x", format.fmt.pix.width, format.fmt.pix.height,format.fmt.pix.pixelformat);
     		hdmi_in_width =  format.fmt.pix.width;
     		hdmi_in_height = format.fmt.pix.height;
     		mPixelFormat = format.fmt.pix.pixelformat;
@@ -592,11 +583,22 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.height =%d", __FUNCTION__, format.fmt.pix.height);
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.pixelformat =%d", __FUNCTION__, format.fmt.pix.pixelformat);
     }*/
-    if(hdmi_in_width == 0 || hdmi_in_height == 0 || initFormat == -1) return 0;
+    if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
     return -1;
 }
-
-
+int HinDevImpl::get_HdmiIn(){
+    struct v4l2_control control;
+    memset(&control, 0, sizeof(struct v4l2_control));
+    control.id = V4L2_CID_DV_RX_POWER_PRESENT;
+    int err = ioctl(mHinDevHandle, VIDIOC_G_CTRL, &control);
+    if (err < 0) {
+        ALOGE("Set POWER_PRESENT failed ,%d(%s)", errno, strerror(errno));
+        return UNKNOWN_ERROR;
+    }
+    mIsHdmiIn = control.value;
+    DEBUG_PRINT(3, "getHdmiIn : %d.", mIsHdmiIn);
+    return mIsHdmiIn;
+}
 int HinDevImpl::set_mode(int displayMode)
 {
     DEBUG_PRINT(3, "run into set_mode,displaymode = %d\n", displayMode);
@@ -615,6 +617,7 @@ int HinDevImpl::set_format(int width, int height, int color_format)
 
     mFrameWidth = width;
     mFrameHeight = height;
+    //mPixelFormat = color_format;
     mHinNodeInfo->width = width;
     mHinNodeInfo->height = height;
     mHinNodeInfo->formatIn = mPixelFormat;
@@ -726,10 +729,10 @@ int HinDevImpl::set_hin_crop(int x, int y, int width, int height)
     return ret ;
 }
 
-int HinDevImpl::get_current_sourcesize(int *width,  int *height)
+int HinDevImpl::get_current_sourcesize(int& width,  int& height,int& pixelformat)
 {
     int ret = NO_ERROR;
-    struct v4l2_format format;
+    v4l2_format format;
     memset(&format, 0,sizeof(struct v4l2_format));
 
     format.type = TVHAL_V4L2_BUF_TYPE;
@@ -738,9 +741,15 @@ int HinDevImpl::get_current_sourcesize(int *width,  int *height)
         DEBUG_PRINT(3, "Open: VIDIOC_G_FMT Failed: %s", strerror(errno));
         return ret;
     }
-    *width = format.fmt.pix.width;
-    *height = format.fmt.pix.height;
-    ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d", *width,  *height);
+    width = format.fmt.pix.width;
+    height = format.fmt.pix.height;
+    pixelformat = getNativeWindowFormat(format.fmt.pix.pixelformat);
+
+    mFrameWidth = width;
+    mFrameHeight = height;
+    mBufferSize = mFrameWidth * mFrameHeight * 3/2;
+    mPixelFormat = format.fmt.pix.pixelformat;
+    ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d, fomat 0x%x", width,  height,pixelformat);
     return ret;
 }
 

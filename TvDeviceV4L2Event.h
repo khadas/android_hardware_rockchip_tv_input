@@ -25,7 +25,7 @@ using ::android::sp;
 
 
 using V4L2EventCallBack =
-    add_pointer<void(int width, int height,int isHdmiIn)>::type;
+    add_pointer<void(int event_type)>::type;
 //typedef void (*V4L2EventCallBack)(int width, int height,int isHdmiIn);
 class V4L2DeviceEvent : public virtual android::RefBase{
 public:
@@ -34,7 +34,6 @@ public:
     
     virtual int initialize(int fd);
     virtual void closeEventThread();
-    virtual int getSubDevFd();
     virtual status_t setControl(int aControlNum, const int value, const char *name);
     virtual status_t getControl(int aControlNum, int *value);
     virtual status_t queryMenu(v4l2_querymenu &menu);
@@ -58,6 +57,7 @@ public:
         int getFormatWeight(){return mFormatWeight;}
         int getFormatHeight(){return mFormatHeight;}
         bool getIsHdmiIn(){return mIsHdmiIn;}
+        void setIsHdmiIn(bool hdmiIn){mIsHdmiIn = hdmiIn;}
         void setFormatWeight(int weight){mFormatWeight = weight;}
         void setFormatHeight(int height){mFormatHeight = height;}
         private:
@@ -73,17 +73,15 @@ public:
             virtual void openDevice();
             virtual void closeDevice();
             virtual bool threadLoop() override;
-	    int getFd() { return mCamFd; }
         private :
             int mVideoFd;
-            int mCamFd;
 
             int pipefd[2] = {-1, -1};
             V4L2EventCallBack mCallback_;
             sp<V4L2DeviceEvent::FormartSize> mCurformat;
     };
 protected:
-    int          mFd;       /*!< file descriptor obtained when device is open */
+    int mFd;       /*!< file descriptor obtained when device is open */
     sp<V4L2EventThread> mV4L2EventThread;
     V4L2EventCallBack callback_;
 };
