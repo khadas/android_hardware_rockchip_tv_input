@@ -104,11 +104,12 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
     }
     switch (event_type) {
 	case V4L2_EVENT_CTRL:
-             isHdmiIn = s_TvInputPriv->mDev->get_HdmiIn();
-	     if(!isHdmiIn)
+             isHdmiIn = s_TvInputPriv->mDev->get_HdmiIn(false);
+	     /*if(!isHdmiIn)
 		event.type = TV_INPUT_EVENT_DEVICE_UNAVAILABLE;
 	     else
 		event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
+             */
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
@@ -120,7 +121,8 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
     event.device_info.type = TV_INPUT_TYPE_HDMI;
     event.device_info.audio_type = AUDIO_DEVICE_NONE;
     event.device_info.audio_address = NULL;
-    s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
+    if(event.type > 0)
+      s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
     return 0;
 }
 
@@ -272,11 +274,12 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             }
             requestInfo.streamId = stream->stream_id;
 
-            s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat);
+            if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))
+		return -EINVAL;
             s_TvInputPriv->mDev->set_crop(0, 0, width, height);
 
-            if (s_TvInputPriv->mStreamType & TYPF_SIDEBAND_WINDOW) {
-                stream->type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+            if (stream->type & TYPF_SIDEBAND_WINDOW) {
+                s_TvInputPriv->mStreamType = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
                 stream->sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());
             }
             s_TvInputPriv->mDev->start();

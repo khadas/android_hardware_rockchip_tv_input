@@ -33,6 +33,7 @@ DrmVopRender::DrmVopRender()
 DrmVopRender::~DrmVopRender()
 {
    // WARN_IF_NOT_DEINIT();
+    ALOGE("DrmVopRender delete ");
 }
 
 DrmVopRender* DrmVopRender::GetInstance() {
@@ -43,10 +44,10 @@ DrmVopRender* DrmVopRender::GetInstance() {
 bool DrmVopRender::initialize()
 {
     ALOGE("initialize in");
-    if (mInitialized) {
+    /*if (mInitialized) {
         ALOGE(">>Drm object has been initialized");
         return true;
-    }
+    }*/
 
     const char *path = "/dev/dri/card0";
 
@@ -283,6 +284,8 @@ uint32_t DrmVopRender::getDrmEncoder(int device)
 
 uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
   switch (hal_format) {
+    case HAL_PIXEL_FORMAT_BGR_888:
+	return DRM_FORMAT_RGB888;
     case HAL_PIXEL_FORMAT_RGB_888:
       return DRM_FORMAT_BGR888;
     case HAL_PIXEL_FORMAT_BGRA_8888:
@@ -301,6 +304,8 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
       return DRM_FORMAT_NV12;
     case HAL_PIXEL_FORMAT_YCrCb_NV12_10:
       return DRM_FORMAT_NV12_10;
+    case HAL_PIXEL_FORMAT_YCbCr_422_SP: 
+      return DRM_FORMAT_NV16;
     default:
       ALOGE("Cannot convert hal format to drm format %u", hal_format);
       return -EINVAL;
@@ -494,7 +499,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     char sideband_crop[PROPERTY_VALUE_MAX];
     memset(sideband_crop, 0, sizeof(sideband_crop));
     DrmOutput *output= &mOutputs[device];
-    int length = property_get("vendor.hwc.sideband.crop", sideband_crop, NULL);
+    int length = 0;//property_get("vendor.hwc.sideband.crop", sideband_crop, NULL);
     if (length > 0) {
        sscanf(sideband_crop, "%d-%d-%d-%d-%d-%d-%d-%d",\
               &src_left, &src_top, &src_right, &src_bottom,\
@@ -518,7 +523,6 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                           0, 0,
                           src_w << 16, src_h << 16);
         ALOGV("drmModeSetPlane ret=%s", strerror(ret));
-
     }
     ALOGV("%s end.", __FUNCTION__);
     return true;

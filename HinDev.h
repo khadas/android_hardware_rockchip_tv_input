@@ -112,7 +112,7 @@ class HinDevImpl {
         int pause();
 	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
-        int get_HdmiIn();
+        int get_HdmiIn(bool enforce);
         int set_rotation(int degree);
         int set_crop(int x, int y, int width, int height);
         int get_hin_crop(int *x, int *y, int *width, int *height);

@@ -62,7 +62,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     }
 
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
-    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%d, usage=%lld, type=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, info.streamType);
+    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%x, usage=%lld, type=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, info.streamType);
 
     if (info.streamType & TYPF_SIDEBAND_WINDOW) {
         mVopRender = android::DrmVopRender::GetInstance();
@@ -112,8 +112,8 @@ status_t RTSidebandWindow::stop() {
     DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
     if (mVopRender) {
         mVopRender->deinitialize();
-        delete mVopRender;
-        mVopRender = NULL;
+        //delete mVopRender;
+        //mVopRender = NULL;
     }
     return 0;
 }

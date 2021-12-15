@@ -191,6 +191,7 @@ uint32_t TvInputBufferManager::GetNumPlanes(buffer_handle_t buffer) {
     case HAL_PIXEL_FORMAT_BGRA_8888:
     case HAL_PIXEL_FORMAT_RGB_888:
     case HAL_PIXEL_FORMAT_RGB_565:
+    case HAL_PIXEL_FORMAT_BGR_888:
         return 1;
     case HAL_PIXEL_FORMAT_YCbCr_422_I:
     case HAL_PIXEL_FORMAT_YCrCb_NV12:
@@ -216,7 +217,8 @@ uint32_t TvInputBufferManager::GetV4L2PixelFormat(buffer_handle_t buffer) {
     switch (hal_pixel_format) {
     case HAL_PIXEL_FORMAT_RGBA_8888:
         return V4L2_PIX_FMT_ABGR32;
-
+    case HAL_PIXEL_FORMAT_BGR_888:
+        return V4L2_PIX_FMT_RGB24;
     // There is no standard V4L2 pixel format corresponding to
     // DRM_FORMAT_xBGR8888.  We use our own V4L2 format extension
     // V4L2_PIX_FMT_RGBX32 here.

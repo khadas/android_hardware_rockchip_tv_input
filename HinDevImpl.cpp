@@ -213,9 +213,9 @@ HinDevImpl::HinDevImpl()
 }
 
 int HinDevImpl::init(int id,int initType) {
-    if(get_HdmiIn() <= 0 ){
+    if(get_HdmiIn(true) <= 0 || getNativeWindowFormat(mPixelFormat) == -1){
 	DEBUG_PRINT(3, "[%s %d] hdmi isnt in", __FUNCTION__, __LINE__);
-        return NO_MEMORY;
+        return -1;
     }
     mHinNodeInfo = (struct HinNodeInfo *) calloc (1, sizeof (struct HinNodeInfo));
     if (mHinNodeInfo == NULL)
@@ -230,6 +230,7 @@ int HinDevImpl::init(int id,int initType) {
 
     if (initType == TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
         mFrameType |= TYPF_SIDEBAND_WINDOW;
+        mFirstRequestCapture = false;
     } else {
         mFrameType |= TYPE_STREAM_BUFFER_PRODUCER;
     }
@@ -502,8 +503,10 @@ int HinDevImpl::stop()
         ALOGE("%s: cancel REQBUFS successful.", __FUNCTION__);
     }
 
+    if (mSidebandWindow) {
+        mSidebandWindow->stop();
+    }
     release_buffer();
-
     mDumpFrameCount = 3;
 
     mOpen = false;
@@ -571,7 +574,7 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
     		break;
     	}
     }
-    /*int err = ioctl(mHinDevHandle, VIDIOC_G_FMT, &format);
+    int err = ioctl(mHinDevHandle, VIDIOC_G_FMT, &format);
     if (err < 0)
     {
         DEBUG_PRINT(3, "[%s %d] failed, VIDIOC_G_FMT %d, %s", __FUNCTION__, __LINE__, err, strerror(err));
@@ -582,11 +585,12 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.width =%d", __FUNCTION__, format.fmt.pix.width);
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.height =%d", __FUNCTION__, format.fmt.pix.height);
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.pixelformat =%d", __FUNCTION__, format.fmt.pix.pixelformat);
-    }*/
+    }
     if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
     return -1;
 }
-int HinDevImpl::get_HdmiIn(){
+int HinDevImpl::get_HdmiIn(bool enforce){
+    if(enforce && mIsHdmiIn) return mIsHdmiIn;
     struct v4l2_control control;
     memset(&control, 0, sizeof(struct v4l2_control));
     control.id = V4L2_CID_DV_RX_POWER_PRESENT;
@@ -596,6 +600,28 @@ int HinDevImpl::get_HdmiIn(){
         return UNKNOWN_ERROR;
     }
     mIsHdmiIn = control.value;
+    //enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
+
+    if(mIsHdmiIn && mState == START){
+       /*err = ioctl(mHinDevHandle, VIDIOC_STREAMON, &bufType);
+       if (err < 0) {
+          DEBUG_PRINT(3, "VIDIOC_STREAMON Failed, error: %s", strerror(errno));
+       }
+       for (int i = 0; i < mBufferCount; i++) {
+          err = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[i]);
+          if (err < 0) {
+            DEBUG_PRINT(3, "VIDIOC_QBUF Failed, error: %s", strerror(errno));
+          }
+       } 
+       ALOGD("[%s %d] VIDIOC_STREAMON return=:%d", __FUNCTION__, __LINE__, err);*/
+       //mState = START;
+    }else{
+       /*err = ioctl (mHinDevHandle, VIDIOC_STREAMOFF, &bufType);
+       if (err < 0) {
+          DEBUG_PRINT(3, "StopStreaming: Unable to stop capture: %s", strerror(errno));
+       }*/
+       mState = STOPED;
+    }
     DEBUG_PRINT(3, "getHdmiIn : %d.", mIsHdmiIn);
     return mIsHdmiIn;
 }
@@ -750,6 +776,16 @@ int HinDevImpl::get_current_sourcesize(int& width,  int& height,int& pixelformat
     mBufferSize = mFrameWidth * mFrameHeight * 3/2;
     mPixelFormat = format.fmt.pix.pixelformat;
     ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d, fomat 0x%x", width,  height,pixelformat);
+    /*if(mIsHdmiIn){
+       enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
+       ret = ioctl(mHinDevHandle, VIDIOC_STREAMON, &bufType);
+    ALOGD("[%s %d] VIDIOC_STREAMON return=:%d", __FUNCTION__, __LINE__, ret);
+       if (ret < 0) {
+          DEBUG_PRINT(3, "VIDIOC_STREAMON Failed, error: %s", strerror(errno));
+       }
+       mState = START;
+    }*/
+    mState = START;
     return ret;
 }
 
@@ -916,7 +952,7 @@ int HinDevImpl::workThread()
         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret < 0) {
             DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
-            return -1;
+            return 0;
         } else {
             DEBUG_PRINT(mDebugLevel, "VIDIOC_DQBUF successful.mDumpType=%d,mDumpFrameCount=%d",mDumpType,mDumpFrameCount);
         }
