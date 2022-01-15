@@ -515,11 +515,13 @@ int HinDevImpl::stop()
     if (mHinNodeInfo)
         free(mHinNodeInfo);
 
-    //if (mV4l2Event)
-    //    mV4l2Event->closeEventThread();
+    if (mV4l2Event)
+        mV4l2Event->closePipe();
 
-    //if (mHinDevHandle >= 0)
-    //    close(mHinDevHandle);
+    if (mHinDevHandle >= 0)
+        close(mHinDevHandle);
+
+    mFirstRequestCapture = true;
 
     DEBUG_PRINT(3, "============================= %s end ================================", __FUNCTION__);
     return ret;

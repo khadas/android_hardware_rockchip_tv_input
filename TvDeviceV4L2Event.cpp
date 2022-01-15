@@ -42,6 +42,13 @@ void V4L2DeviceEvent::closeEventThread() {
         mV4L2EventThread.clear();
     }
 }
+
+void V4L2DeviceEvent::closePipe() {
+    if (mV4L2EventThread) {
+        mV4L2EventThread->closeDevice();
+    }
+}
+
 int V4L2DeviceEvent::subscribeEvent(int event)
 {
     ALOGI("@%s", __FUNCTION__);

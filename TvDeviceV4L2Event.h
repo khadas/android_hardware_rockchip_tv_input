@@ -42,6 +42,7 @@ public:
     virtual int subscribeEvent(int event);
     virtual int unsubscribeEvent(int event);
     virtual int dequeueEvent(struct v4l2_event *event);
+    virtual void closePipe();
     void RegisterEventvCallBack(V4L2EventCallBack cb) { callback_ = cb; }
     void UnRegisterEventCallBack() { callback_ = nullptr; }
 
