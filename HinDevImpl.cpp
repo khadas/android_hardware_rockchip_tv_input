@@ -375,6 +375,8 @@ HinDevImpl::~HinDevImpl()
 
 int HinDevImpl::start_device()
 {
+    mRequestCaptureCount = 0;
+    mFirstRequestCapture = true;
     int ret = -1;
 
     DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
@@ -522,6 +524,7 @@ int HinDevImpl::stop()
         close(mHinDevHandle);
 
     mFirstRequestCapture = true;
+    mRequestCaptureCount = 0;
 
     DEBUG_PRINT(3, "============================= %s end ================================", __FUNCTION__);
     return ret;
@@ -901,14 +904,41 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
     //int ret;
     //int bufferIndex = -1;
     //ALOGD("rawHandle = %p,bufferId=%lld,%lld" PRIu64, rawHandle,(long long)bufferId,(long long)mPreviewRawHandle[0].bufferId);
-    if ( mFirstRequestCapture && mPreviewRawHandle[0].bufferId == bufferId) {
-        ALOGD("first request_capture, ignore it.");
-	    mFirstRequestCapture = false;
+    int previewBufferIndex = -1;
+    for (int i=0; i<mPreviewRawHandle.size(); i++) {
+        if (mPreviewRawHandle[i].bufferId == bufferId) {
+            previewBufferIndex = i;
+            break;
+        }
+    }
+
+    int bufferIndex = -1;
+    int requestFd = -1;
+    for (int i=0; i<mBufferCount; i++) {
+        int fd = mHinNodeInfo->bufferArray[i].m.planes[0].m.fd;
+        if (fd == mPreviewRawHandle[previewBufferIndex].bufferFd) {
+            bufferIndex = i;
+            requestFd = fd;
+            break;
+        }
+    }
+    DEBUG_PRINT(mDebugLevel, "request_capture previewBufferIndex=%d, bufferIndex=%d, requestFd=%d, bufferId %" PRIu64,
+        previewBufferIndex, bufferIndex, requestFd, bufferId);
+    if ( mFirstRequestCapture/* && mPreviewRawHandle[0].bufferId == bufferId*/) {
+        ALOGW("first request_capture, deque first two buffer for skip");
+        mFirstRequestCapture = false;
+        mHinNodeInfo->currBufferHandleIndex = 0;
+        mRequestCaptureCount = 2;
         // mPreviewBuffThread = new PreviewBuffThread(this);
         // mPreviewThreadRunning = true;
         //mPreviewBuffIndex = 0;
         return 0;
     }
+    if (mState != START) {
+        return 0;
+    }
+
+    mRequestCaptureCount++;
 
     //ALOGD("rawHandle = %p, bufferId=%" PRIu64, rawHandle, bufferId);
     for (int i=0; i<mPreviewRawHandle.size(); i++) {
@@ -920,6 +950,11 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
             }
         }
     }
+    int ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[bufferIndex]);
+    if (ret != 0) {
+        ALOGE("VIDIOC_QBUF Buffer failed err=%s bufferIndex %d requestFd=%d %" PRIu64,
+            strerror(errno), bufferIndex, requestFd, bufferId);
+    }
 
     ALOGV("%s end.", __FUNCTION__);
     return mHinNodeInfo->currBufferHandleIndex;
@@ -929,11 +964,11 @@ void HinDevImpl::wrapCaptureResultAndNotify(uint64_t buffId,buffer_handle_t hand
     if (mState == STOPED) {
         return;
     };
-    if (mFirstRequestCapture && mPreviewRawHandle[0].bufferId == buffId) {
+    /*if (mFirstRequestCapture && mPreviewRawHandle[0].bufferId == buffId) {
         ALOGD("first wrapCaptureResultAndNotify, ignore it.");
         mFirstRequestCapture = false;
         return;
-    }
+    }*/
     tv_input_capture_result_t result;
     result.buff_id = buffId;
     //ALOGD("%s %lld,end.", __FUNCTION__,(long long)buffId);
@@ -945,12 +980,13 @@ void HinDevImpl::wrapCaptureResultAndNotify(uint64_t buffId,buffer_handle_t hand
 int HinDevImpl::workThread()
 {
     int ret;
-    if (mState == START && !mFirstRequestCapture) {
+    if (mState == START /*&& !mFirstRequestCapture*/ && mRequestCaptureCount > 0) {
         if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
              mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
         //DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  	//mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].flags = V4L2_BUF_FLAG_NO_CACHE_INVALIDATE |
         //                 V4L2_BUF_FLAG_NO_CACHE_CLEAN;
+        mRequestCaptureCount--;
         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret < 0) {
             DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
@@ -977,21 +1013,14 @@ int HinDevImpl::workThread()
             if (mV4L2DataFormatConvert) {
                 mSidebandWindow->buffDataTransfer(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
             }
-	    mPreviewBuffIndex++;
-	    if (mPreviewBuffIndex == APP_PREVIEW_BUFF_CNT)
-                  mPreviewBuffIndex = mPreviewBuffIndex % APP_PREVIEW_BUFF_CNT;
-	    if(!mPreviewRawHandle[mPreviewBuffIndex].isFilled){
-               mPreviewRawHandle[mPreviewBuffIndex].isFilled = true; 
-               wrapCaptureResultAndNotify(mPreviewRawHandle[mPreviewBuffIndex].bufferId,mPreviewRawHandle[mPreviewBuffIndex].outHandle);
-	     }
+        }
+        for (int i=0; i<mPreviewRawHandle.size(); i++) {
+            if (mPreviewRawHandle[i].bufferFd == mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd) {
+                wrapCaptureResultAndNotify(mPreviewRawHandle[i].bufferId,mPreviewRawHandle[i].outHandle);
+                break;
+            }
         }
         debugShowFPS();
-        ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
-        if (ret != 0) {
-            DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
-        } else {
-            DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF successful.");
-        }
         mHinNodeInfo->currBufferHandleIndex++;
     }
     return NO_ERROR;

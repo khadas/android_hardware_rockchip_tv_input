@@ -209,6 +209,7 @@ class HinDevImpl {
         bool mV4L2DataFormatConvert;
         int mPreviewBuffIndex = 0;
 	    bool mFirstRequestCapture;
+        int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };
