@@ -1108,7 +1108,7 @@ int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
     assert (fds.size() > 0);
 
     fd = (int)(fds[0]);
-    ALOGD("GetHandleFd buffer:%p, fd = %d.", buffer, fd);
+    //ALOGD("GetHandleFd buffer:%p, fd = %d.", buffer, fd);
 
     return fd;
 }

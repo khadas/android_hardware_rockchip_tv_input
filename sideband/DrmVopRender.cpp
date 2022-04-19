@@ -423,7 +423,9 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         bo.pitches[0] = src_stride;
         bo.gem_handles[0] = gem_handle;
         bo.offsets[0] = 0;
-        if(src_format == HAL_PIXEL_FORMAT_YCrCb_NV12 || src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10)
+        if(src_format == HAL_PIXEL_FORMAT_YCrCb_NV12
+            || src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10
+            || src_format == HAL_PIXEL_FORMAT_YCbCr_422_SP)
         {
             bo.pitches[1] = bo.pitches[0];
             bo.gem_handles[1] = gem_handle;
