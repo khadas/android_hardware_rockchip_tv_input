@@ -21,6 +21,7 @@
 #include <cutils/native_handle.h>
 #include <hardware/hwcomposer_defs.h>
 #include <map>
+#include <vector>
 
 extern "C" {
 #include "xf86drm.h"
@@ -106,18 +107,30 @@ private:
         OUTPUT_MAX,
     };
 
-    struct DrmOutput {
+    typedef struct DrmModeInfo {
         drmModeConnectorPtr connector;
         drmModeEncoderPtr encoder;
         drmModeCrtcPtr crtc;
+
+        drmModeObjectPropertiesPtr props;
+
+        int plane_id = -1;
+        int crtc_id = -1;
+    } DrmModeInfo_t;
+
+    struct DrmOutput {
+        //drmModeConnectorPtr connector;
+        //drmModeEncoderPtr encoder;
+        //drmModeCrtcPtr crtc;
         drmModeModeInfo mode;
 
         drmModePlaneResPtr plane_res;
         drmModePlanePtr plane;
         drmModeResPtr res;
         drmModeAtomicReq *req;
-        drmModeObjectPropertiesPtr props;
+        //drmModeObjectPropertiesPtr props;
         drmModePropertyPtr prop;
+        std::vector<DrmModeInfo_t> mDrmModeInfos;
 
         uint32_t fbHandle;
         uint32_t fbId;

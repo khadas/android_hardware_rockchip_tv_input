@@ -104,12 +104,12 @@ status_t RTSidebandWindow::release() {
 }
 
 status_t RTSidebandWindow::start() {
-    DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s %d in", __FUNCTION__, __LINE__);
     return 0;
 }
 
 status_t RTSidebandWindow::stop() {
-    DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s %d in", __FUNCTION__, __LINE__);
     if (mVopRender) {
         mVopRender->deinitialize();
         //delete mVopRender;

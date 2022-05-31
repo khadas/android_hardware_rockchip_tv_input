@@ -28,6 +28,7 @@ DrmVopRender::DrmVopRender()
 {
     memset(&mOutputs, 0, sizeof(mOutputs));
     mSidebandPlaneId = -1;
+    ALOGE("DrmVopRender");
 }
 
 DrmVopRender::~DrmVopRender()
@@ -74,6 +75,7 @@ bool DrmVopRender::initialize()
 
 void DrmVopRender::deinitialize()
 {
+    ALOGE("deinitialize in");
     if(!mInitialized) return;
     for (int i = 0; i < OUTPUT_MAX; i++) {
         resetOutput(i);
@@ -111,6 +113,8 @@ bool DrmVopRender::detect() {
 
 bool DrmVopRender::detect(int device)
 {
+    ALOGE("detect device=%d", device);
+    mSidebandPlaneId = -1;
     int outputIndex = getOutputIndex(device);
     if (outputIndex < 0 ) {
         return false;
@@ -163,20 +167,21 @@ bool DrmVopRender::detect(int device)
             continue;
         }
 
-        output->connector = connector;
+        DrmModeInfo drmModeInfo;
+        drmModeInfo.connector = connector;
         output->connected = true;
         ALOGD("connector %d connected",outputIndex);
         // get proper encoder for the given connector
         if (connector->encoder_id) {
             ALOGD("Drm connector has encoder attached on device %d", device);
-            output->encoder = drmModeGetEncoder(mDrmFd, connector->encoder_id);
-            if (!output->encoder) {
+            drmModeInfo.encoder = drmModeGetEncoder(mDrmFd, connector->encoder_id);
+            if (!drmModeInfo.encoder) {
                 ALOGD("failed to get encoder from a known encoder id");
                 // fall through to get an encoder
             }
         }
 
-        if (!output->encoder) {
+        if (!drmModeInfo.encoder) {
             ALOGD("getting encoder for device %d", device);
             drmModeEncoderPtr encoder;
             for (int j = 0; j < resources->count_encoders; j++) {
@@ -192,29 +197,29 @@ bool DrmVopRender::detect(int device)
                 }
                 ALOGD("++++encoder_type=%d,device=%d",encoder->encoder_type,getDrmEncoder(device));
                 if (encoder->encoder_type == getDrmEncoder(device)) {
-                    output->encoder = encoder;
+                    drmModeInfo.encoder = encoder;
                     break;
                 }
                 drmModeFreeEncoder(encoder);
                 encoder = NULL;
             }
         }
-        if (!output->encoder) {
+        if (!drmModeInfo.encoder) {
             ALOGE("failed to get drm encoder");
             break;
         }
 
         // get an attached crtc or spare crtc
-        if (output->encoder->crtc_id) {
+        if (drmModeInfo.encoder->crtc_id) {
             ALOGD("Drm encoder has crtc attached on device %d", device);
-            output->crtc = drmModeGetCrtc(mDrmFd, output->encoder->crtc_id);
-            if (!output->crtc) {
+            drmModeInfo.crtc = drmModeGetCrtc(mDrmFd, drmModeInfo.encoder->crtc_id);
+            if (!drmModeInfo.crtc) {
                 ALOGE("failed to get crtc from a known crtc id");
                 // fall through to get a spare crtc
             }
         }
-        if (!output->crtc) {
-            ALOGE("getting crtc for device %d", device);
+        if (!drmModeInfo.crtc) {
+            ALOGE("getting crtc for device %d %d", device, i);
             drmModeCrtcPtr crtc;
             for (int j = 0; j < resources->count_crtcs; j++) {
                 if (!resources->crtcs || !resources->crtcs[j]) {
@@ -227,9 +232,10 @@ bool DrmVopRender::detect(int device)
                     ALOGE("drmModeGetCrtc failed");
                     continue;
                 }
+
                 // check if legal crtc to the encoder
-                if (output->encoder->possible_crtcs & (1<<j)) {
-                    output->crtc = crtc;
+                if (drmModeInfo.encoder->possible_crtcs & (1<<j)) {
+                    drmModeInfo.crtc = crtc;
                 }
                 drmModeObjectPropertiesPtr props;
                 drmModePropertyPtr prop;
@@ -244,7 +250,7 @@ bool DrmVopRender::detect(int device)
                     if (!strcmp(prop->name, "ACTIVE")) {
                         ALOGD("Crtc id=%d is ACTIVE.", crtc->crtc_id);
                         if (props->prop_values[i]) {
-                            output->crtc = crtc;
+                            drmModeInfo.crtc = crtc;
                             ALOGD("Crtc id=%d is active",crtc->crtc_id);
                             break;
                         }
@@ -252,19 +258,27 @@ bool DrmVopRender::detect(int device)
                 }
             }
         }
-        if (!output->crtc) {
+        if (!drmModeInfo.crtc) {
             ALOGE("failed to get drm crtc");
             break;
         }
         output->plane_res = drmModeGetPlaneResources(mDrmFd);
         ALOGD("drmModeGetPlaneResources successful.");
-        break;
+        output->mDrmModeInfos.push_back(drmModeInfo);
+        //break;
     }
 
-    if (output->crtc) {
-        output->props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
-        if (!output->props) {
-            ALOGE("Failed to found props crtc[%d] %s\n", output->crtc->crtc_id, strerror(errno));
+    if (output->mDrmModeInfos.empty()) {
+        ALOGD("final mDrmModeInfos is empty");
+    } else {
+        for (int i=0; i<output->mDrmModeInfos.size(); i++) {
+            if (output->mDrmModeInfos[i].crtc) {
+               ALOGD("final  crtc->crtc_id %d", output->mDrmModeInfos[i].crtc->crtc_id);
+               output->mDrmModeInfos[i].props = drmModeObjectGetProperties(mDrmFd, output->mDrmModeInfos[i].crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+               if (!output->mDrmModeInfos[i].props) {
+                   ALOGE("Failed to found props crtc[%d] %s\n", output->mDrmModeInfos[i].crtc->crtc_id, strerror(errno));
+               }
+            }
         }
     }
 
@@ -330,6 +344,7 @@ int DrmVopRender::FindSidebandPlane(int device) {
         ALOGE("device is not connected,outputIndex=%d",outputIndex);
         return false;
     }
+    //ALOGD("output->plane_res->count_planes %d", output->plane_res->count_planes);
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
         props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
@@ -345,6 +360,23 @@ int DrmVopRender::FindSidebandPlane(int device) {
                     find_plan_id = plane->plane_id;
                     if (prop)
                         drmModeFreeProperty(prop);
+                    if (find_plan_id > 0) {
+                        ALOGD("find_plan_id=%d", find_plan_id);
+                        if (!output->mDrmModeInfos.empty()) {
+                            for (int k=0; k<output->mDrmModeInfos.size(); k++) {
+                                int plane_id = output->mDrmModeInfos[k].plane_id;
+                                if (plane_id > 0) {
+                                    continue;
+                                }
+                                output->mDrmModeInfos[k].plane_id = find_plan_id;
+                                ALOGD("set plan_id=%d  to pos=%d", find_plan_id, k);
+                                break;
+                            }
+                        }
+                        mSidebandPlaneId = find_plan_id;
+                        //break;
+                    }
+
                     break;
                 }
             }
@@ -355,16 +387,14 @@ int DrmVopRender::FindSidebandPlane(int device) {
             drmModeFreeObjectProperties(props);
         if(plane)
             drmModeFreePlane(plane);
-        if (find_plan_id > 0) {
-            break;
-        }
+        //if (find_plan_id > 0) {
+        //    break;
+        //}
     }
     if (find_plan_id == 0) {
+       mSidebandPlaneId = -1;
        return -1;
-    } else {
-        mSidebandPlaneId = find_plan_id;
     }
-    ALOGV("FindSidebandPlane find_plan_id=%d", find_plan_id);
     return find_plan_id;
 }
 
@@ -454,23 +484,30 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
 
 void DrmVopRender::resetOutput(int index)
 {
+    ALOGE("resetOutput index=%d", index);
     DrmOutput *output = &mOutputs[index];
 
     output->connected = false;
     memset(&output->mode, 0, sizeof(drmModeModeInfo));
 
-    if (output->connector) {
-        drmModeFreeConnector(output->connector);
-        output->connector = 0;
+    if (!output->mDrmModeInfos.empty()) {
+        for (int i=0; i<output->mDrmModeInfos.size(); i++) {
+            if (output->mDrmModeInfos[i].connector) {
+                drmModeFreeConnector(output->mDrmModeInfos[i].connector);
+                output->mDrmModeInfos[i].connector = 0;
+            }
+            if (output->mDrmModeInfos[i].encoder) {
+                drmModeFreeEncoder(output->mDrmModeInfos[i].encoder);
+                output->mDrmModeInfos[i].encoder = 0;
+            }
+            if (output->mDrmModeInfos[i].crtc) {
+                drmModeFreeCrtc(output->mDrmModeInfos[i].crtc);
+                output->mDrmModeInfos[i].crtc = 0;
+            }
+        }
+        output->mDrmModeInfos.clear();
     }
-    if (output->encoder) {
-        drmModeFreeEncoder(output->encoder);
-        output->encoder = 0;
-    }
-    if (output->crtc) {
-        drmModeFreeCrtc(output->crtc);
-        output->crtc = 0;
-    }
+
     if (output->fbId) {
         drmModeRmFB(mDrmFd, output->fbId);
         output->fbId = 0;
@@ -478,6 +515,7 @@ void DrmVopRender::resetOutput(int index)
     if (output->fbHandle) {
         output->fbHandle = 0;
     }
+    mSidebandPlaneId = -1;
 }
 
 bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle) {
@@ -508,23 +546,32 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
               &dst_left, &dst_top, &dst_right, &dst_bottom);
        dst_w = dst_right - dst_left;
        dst_h = dst_bottom - dst_top;
-    } else {
+    /*} else {
        dst_w = output->crtc->width;
-       dst_h = output->crtc->height;
+       dst_h = output->crtc->height;*/
     }
     src_w = width;
     src_h = height;
     //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
-    ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
-    ALOGV("mDrmFd=%d plane_id=%d output->crtc->crtc_id=%d fb_id=%d flags=%d", mDrmFd, plane_id, output->crtc->crtc_id, fb_id, flags);
-    if (plane_id > 0) {
-        ret = drmModeSetPlane(mDrmFd, plane_id,
-                          output->crtc->crtc_id, fb_id, flags,
+    //ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
+    //ALOGV("mDrmFd=%d plane_id=%d, output->crtc->crtc_id=%d fb_id=%d flags=%d", mDrmFd, plane_id, output->crtc->crtc_id, fb_id, flags);
+    if (!output->mDrmModeInfos.empty()) {
+        for (int i=0; i<output->mDrmModeInfos.size(); i++) {
+            DrmModeInfo_t drmModeInfo = output->mDrmModeInfos[i];
+            plane_id = drmModeInfo.plane_id;
+            if (plane_id > 0) {
+                dst_w = drmModeInfo.crtc->width;
+                dst_h = drmModeInfo.crtc->height;
+                ret = drmModeSetPlane(mDrmFd, plane_id,
+                          drmModeInfo.crtc->crtc_id, fb_id, flags,
                           dst_left, dst_top,
                           dst_w, dst_h,
                           0, 0,
                           src_w << 16, src_h << 16);
-        ALOGV("drmModeSetPlane ret=%s", strerror(ret));
+                ALOGV("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
+                    strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h);
+            }
+        }
     }
     ALOGV("%s end.", __FUNCTION__);
     return true;
@@ -540,7 +587,7 @@ bool DrmVopRender::ClearDrmPlaneContent(int device, int32_t width, int32_t heigh
     drmModePlanePtr plane;
     drmModeObjectPropertiesPtr props;
     drmModePropertyPtr prop;
-    props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+    //props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
 
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
