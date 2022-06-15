@@ -64,7 +64,7 @@ static size_t getBufSize(int format, int width, int height)
         case V4L2_PIX_FMT_RGB565X:
             buf_size = width * height * 2;
             break;
-        case V4L2_PIX_FMT_RGB24:
+        case V4L2_PIX_FMT_BGR24:
             buf_size = width * height * 3;
             break;
         case V4L2_PIX_FMT_RGB32:
@@ -163,7 +163,7 @@ static int  getNativeWindowFormat(int format)
         case V4L2_PIX_FMT_RGB565:
             nativeFormat = HAL_PIXEL_FORMAT_RGB_565;
             break;
-        case V4L2_PIX_FMT_RGB24:
+        case V4L2_PIX_FMT_BGR24:
             nativeFormat = HAL_PIXEL_FORMAT_BGR_888;
             break;
         case V4L2_PIX_FMT_RGB32:
