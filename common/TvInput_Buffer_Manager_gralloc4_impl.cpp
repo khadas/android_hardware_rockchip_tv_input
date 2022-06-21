@@ -195,6 +195,7 @@ uint32_t TvInputBufferManager::GetNumPlanes(buffer_handle_t buffer) {
         return 1;
     case HAL_PIXEL_FORMAT_YCbCr_422_I:
     case HAL_PIXEL_FORMAT_YCrCb_NV12:
+    case HAL_PIXEL_FORMAT_YCbCr_444_888:
     case HAL_PIXEL_FORMAT_YCbCr_422_SP:
     case HAL_PIXEL_FORMAT_YCrCb_420_SP: // NV21
     case HAL_PIXEL_FORMAT_YCbCr_420_888:
@@ -235,6 +236,8 @@ uint32_t TvInputBufferManager::GetV4L2PixelFormat(buffer_handle_t buffer) {
         return V4L2_PIX_FMT_NV12;
     case HAL_PIXEL_FORMAT_YCrCb_420_SP:
         return V4L2_PIX_FMT_NV21;
+    case HAL_PIXEL_FORMAT_YCbCr_444_888:
+        return V4L2_PIX_FMT_NV24;
 
     default:
       return V4L2_PIX_FMT_NV12;

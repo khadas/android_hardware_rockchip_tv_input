@@ -178,8 +178,11 @@ static int  getNativeWindowFormat(int format)
 	case V4L2_PIX_FMT_NV16:
 	    nativeFormat = HAL_PIXEL_FORMAT_YCbCr_422_SP;
 	    break;
+        case V4L2_PIX_FMT_NV24:
+            nativeFormat = HAL_PIXEL_FORMAT_YCbCr_444_888;
+            break;
         default:
-            DEBUG_PRINT(3, "Invalid format,Use default format");
+            DEBUG_PRINT(3, "Invalid format %d, Use default format", format);
     }
     return nativeFormat;
 }

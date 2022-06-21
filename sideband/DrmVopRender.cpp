@@ -320,6 +320,8 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
       return DRM_FORMAT_NV12_10;
     case HAL_PIXEL_FORMAT_YCbCr_422_SP: 
       return DRM_FORMAT_NV16;
+    case HAL_PIXEL_FORMAT_YCbCr_444_888:
+      return DRM_FORMAT_NV24;
     default:
       ALOGE("Cannot convert hal format to drm format %u", hal_format);
       return -EINVAL;
@@ -460,6 +462,10 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.pitches[1] = bo.pitches[0];
             bo.gem_handles[1] = gem_handle;
             bo.offsets[1] = bo.pitches[1] * bo.height;
+        } else if (src_format == HAL_PIXEL_FORMAT_YCbCr_444_888) {
+            bo.pitches[1] = bo.pitches[0] * 2;
+            bo.gem_handles[1] = gem_handle;
+            bo.offsets[1] = bo.pitches[0] * bo.height;
         }
         if (src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
             bo.width = src_w / 1.25;
