@@ -28,6 +28,8 @@
 #include "sideband/RTSidebandWindow.h"
 #include "common/RgaCropScale.h"
 #include "common/HandleImporter.h"
+#include "MppEncodeServer.h"
+#include "RKMppEncApi.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -35,6 +37,10 @@
 #endif
 
 using namespace android;
+using ::android::tvinput::RgaCropScale;
+
+#define RK_HDMIRX_CMD_GET_FPS \
+        _IOR('V', BASE_VIDIOC_PRIVATE + 0, int)
 
 typedef struct source_buffer_info {
     buffer_handle_t source_buffer_handle_t;
@@ -64,7 +70,14 @@ struct HinNodeInfo {
     int displaymode;
 };
 
-enum State{
+typedef struct tv_record_buffer_info {
+    buffer_handle_t outHandle;
+    int width;
+    int height;
+    bool isCoding;
+} tv_record_buffer_info_t;
+
+enum State {
     START,
     PAUSE,
     STOPING,
@@ -101,6 +114,9 @@ typedef void (*app_data_callback)(void *user, source_buffer_info_t *buff_info);
     (type *)((char*)(ptr) - offsetof(type, member))
 #endif
 
+static std::vector<tv_record_buffer_info_t> mRecordHandle;
+//static std::mutex mRecordMutex;
+
 class HinDevImpl {
     public:
         HinDevImpl();
@@ -135,12 +151,21 @@ class HinDevImpl {
         int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
 
         const tv_input_callback_ops_t* mTvInputCB;
+
+    //Just for first start encoding thread control
+    bool mEncodeThreadRunning = false;
+    MppEncodeServer *gMppEnCodeServer=nullptr;
     private:
         int workThread();
         // int previewBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
         void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle);
+        void doRecordCmd(const map<string, string> data);
+        int getRecordBufferFd(int previewHandlerIndex);
+        int init_encodeserver(MppEncodeServer::MetaInfo* info);
+    void deinit_encodeserver();
+        void stopRecord();
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -177,6 +202,7 @@ class HinDevImpl {
         int mBufferCount;
         int mFrameWidth;
         int mFrameHeight;
+        int mFrameFps;
         int mBufferSize;
         bool mIsHdmiIn;
         unsigned int flex_ratio;
@@ -213,5 +239,6 @@ class HinDevImpl {
 	    bool mFirstRequestCapture;
         int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
+        int mRecordCodingBuffIndex = 0;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

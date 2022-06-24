@@ -127,6 +127,13 @@ status_t RTSidebandWindow::flush() {
     return status;
 }
 
+status_t RTSidebandWindow::flushCache(buffer_handle_t buffer) {
+    if (!buffer) {
+        DEBUG_PRINT(3, "%s param buffer is NULL.", __FUNCTION__);
+        return -1;
+    }
+    return mBuffMgr->FlushCache(buffer);
+}
 status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
@@ -149,13 +156,14 @@ status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
     return ret;
 }
 
-status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle, int32_t format) {
+status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle,
+        int width, int32_t height, int32_t format) {
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
     int ret = -1;
 
-    ret = mBuffMgr->Allocate(mSidebandInfo.width,
-                        mSidebandInfo.height,
+    ret = mBuffMgr->Allocate(-1 == width?mSidebandInfo.width:width,
+                        -1 == height?mSidebandInfo.height:height,
                         -1 == format?mSidebandInfo.format:format,
                         0,
                         common::GRALLOC,
@@ -384,6 +392,49 @@ int RTSidebandWindow::buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_
     }
     return -1;
 }
+
+int RTSidebandWindow::NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstHandle, int width, int height) {
+    if (srcHandle && dstHandle) {
+        //void *tmpSrcPtr = NULL, *tmpDstPtr = NULL;
+        unsigned char* tmpSrcPtr = NULL;
+        unsigned char* tmpDstPtr = NULL;
+        int srcDatasize = -1;
+        int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+        //DEBUG_PRINT(3, "%d %d", mBuffMgr->GetHandleBufferSize(srcHandle), mBuffMgr->GetHandleBufferSize(dstHandle));
+        mBuffMgr->Lock(srcHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcHandle), mBuffMgr->GetHeight(srcHandle), (void**)&tmpSrcPtr);
+        for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
+            srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
+        }
+        //ALOGD("data tmpSrcPtr ptr = %p, srcDatasize=%d", tmpSrcPtr, srcDatasize);
+        mBuffMgr->LockLocked(dstHandle, lockMode, 0, 0, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle), (void**)&tmpDstPtr);
+        //ALOGD("data tmpDstPtr ptr = %p, width=%d, height=%d", tmpDstPtr, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle));
+
+        int i,j;
+        int width_uv_out = width / 2;
+        int height_uv_out = height / 2;
+
+        int uIn = width * height;
+        int uOut = width * height;
+        //ALOGD("==============start================%dX%d, %dX%d", width_uv_out, height_uv_out, width, height);
+        std::memcpy(tmpDstPtr, tmpSrcPtr, width*height);
+
+        for(i = 0; i < height_uv_out; i++) {
+            for(j = 0; j < width_uv_out; j++) {
+                int dstPos = uOut + i*width + j*2;
+                int srcPos = uIn + i*4*width + j*4;
+                std::memcpy(tmpDstPtr+dstPos, tmpSrcPtr+srcPos, 2);
+            }
+        }
+
+        mBuffMgr->UnlockLocked(dstHandle);
+        mBuffMgr->Unlock(srcHandle);
+        //ALOGD("==============end================");
+
+        return 0;
+    }
+    return -1;
+}
+
 int RTSidebandWindow::writeData2File(const char *fileName, void *data, int dataSize) {
     int ret = 0;
     FILE* fp = NULL;
