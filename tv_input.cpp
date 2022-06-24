@@ -113,6 +113,8 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
         if (!isHdmiIn) {
             std::map<std::string, std::string> data;
             s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
+            event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
+            event.priv_app_cmd.action = "hdmiinout";
         }
              break;
         case V4L2_EVENT_SOURCE_CHANGE:

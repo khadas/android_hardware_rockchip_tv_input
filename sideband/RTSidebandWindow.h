@@ -86,13 +86,13 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t start();
     status_t stop();
     status_t flush();
-
+    status_t flushCache(buffer_handle_t buffer);
     status_t allocateBuffer(buffer_handle_t *buffer);
     status_t freeBuffer(buffer_handle_t *buffer, int type);
     status_t remainBuffer(buffer_handle_t buffer);
     status_t dequeueBuffer(buffer_handle_t *buffer);
     status_t queueBuffer(buffer_handle_t buffer);
-    status_t allocateSidebandHandle(buffer_handle_t *handle, int32_t format);
+    status_t allocateSidebandHandle(buffer_handle_t *handle, int width, int32_t height, int32_t format);
     int getBufferHandleFd(buffer_handle_t buffer);
     int getBufferLength(buffer_handle_t buffer);
 
@@ -106,6 +106,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int32_t  getFormat() { return mSidebandInfo.format; }
     int importHidlHandleBufferLocked(/*in&out*/buffer_handle_t& rawHandle);
     int buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
+    int NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstHandle, int width, int height);
     status_t show(buffer_handle_t buffer);
     status_t clearVopArea();
 

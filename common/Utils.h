@@ -36,6 +36,7 @@
 //#define TVHAL_V4L2_BUF_TYPE V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
 #define TVHAL_V4L2_BUF_MEMORY_TYPE V4L2_MEMORY_DMABUF //V4L2_MEMORY_MMAP
 
+#define SIDEBAND_RECORD_BUFF_CNT 4
 #define SIDEBAND_WINDOW_BUFF_CNT 2
 #define APP_PREVIEW_BUFF_CNT 2
 #define PLANES_NUM 1
@@ -67,19 +68,19 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_SKIP_FRAME "vendor.tvinput.skipframe"
 #define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
 #define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
-
+#define TV_INPUT_HAS_ENCODE "vendor.tvinput.encode"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \
     do {                                                      \
         if (3 == level)                                       \
-            ALOGE("%s: " fmt, __func__, ## arg);              \
+            ALOGE("%s:line %d | " fmt, __func__, __LINE__,## arg);              \
         else if (2 == level)                                  \
-            ALOGD("%s: " fmt, __func__, ## arg);              \
+            ALOGD("%s:line %d | " fmt, __func__, __LINE__, ## arg);              \
         else if (1 == level)                                  \
-            ALOGI("%s: " fmt, __func__, ## arg);              \
+            ALOGI("%s:line %d | " fmt, __func__, __LINE__, ## arg);              \
         else                                                  \
-            ALOGV("%s: " fmt, __func__, ## arg);              \
+            ALOGV("%s:line %d | " fmt, __func__, __LINE__, ## arg);              \
     } while (0)
 
 
