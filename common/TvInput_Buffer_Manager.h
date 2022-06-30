@@ -94,7 +94,7 @@ class EXPORTED TvInputBufferManager {
   virtual int Allocate(size_t width,
                        size_t height,
                        uint32_t format,
-                       uint32_t usage,
+                       uint64_t usage,
                        BufferType type,
                        buffer_handle_t* out_buffer,
                        uint32_t* out_stride) = 0;

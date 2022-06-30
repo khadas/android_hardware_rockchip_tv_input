@@ -44,7 +44,7 @@ using android::hardware::graphics::mapper::V4_0::IMapper;
 struct BufferContext {
     uint64_t buffer_id;
     BufferType type;
-    uint32_t usage;
+    uint64_t usage;
 };
 
 typedef std::unordered_map<buffer_handle_t,
@@ -60,7 +60,7 @@ public:
     int Allocate(size_t width,
                  size_t height,
                  uint32_t format,
-                 uint32_t usage,
+                 uint64_t usage,
                  BufferType type,
                  buffer_handle_t* out_buffer,
                  uint32_t* out_stride) final;
@@ -106,7 +106,7 @@ private:
     int AllocateGrallocBuffer(size_t width,
                               size_t height,
                               uint32_t format,
-                              uint32_t usage,
+                              uint64_t usage,
                               buffer_handle_t* out_buffer,
                               uint32_t* out_stride);
 

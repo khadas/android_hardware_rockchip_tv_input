@@ -465,7 +465,7 @@ TvInputBufferManagerImpl::~TvInputBufferManagerImpl() {
 int TvInputBufferManagerImpl::Allocate(size_t width,
                                       size_t height,
                                       uint32_t format,
-                                      uint32_t usage,
+                                      uint64_t usage,
                                       BufferType type,
                                       buffer_handle_t* out_buffer,
                                       uint32_t* out_stride) {
@@ -1119,10 +1119,10 @@ int TvInputBufferManagerImpl::GetHandleFd(buffer_handle_t buffer) {
 int TvInputBufferManagerImpl::AllocateGrallocBuffer(size_t width,
                                                    size_t height,
                                                    uint32_t format,
-                                                   uint32_t usage,
+                                                   uint64_t usage,
                                                    buffer_handle_t* out_buffer,
                                                    uint32_t* out_stride) {
-    ALOGD("AllocateGrallocBuffer %zu, %zu, %u, %u", width, height, format, usage);
+    ALOGD("AllocateGrallocBuffer %zu, %zu, %u, %" PRIu64, width, height, format, usage);
 
     IMapper::BufferDescriptorInfo descriptorInfo;
     sBufferDescriptorInfo("tv_input_SidebandStream", width, height, (PixelFormat)format, 1/*layerCount*/, usage, &descriptorInfo);

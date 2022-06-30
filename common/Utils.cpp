@@ -699,7 +699,7 @@ std::shared_ptr<CameraBuffer>
 allocateHandleBuffer(int w,
                      int h,
                      int gfxFmt,
-                     int usage)
+                     uint64_t usage)
 {
     HAL_TRACE_CALL(CAM_GLBL_DBG_HIGH);
     PERFORMANCE_ATRACE_NAME_SNPRINTF("Allocate One Buf %dx%d", w, h);
@@ -741,7 +741,7 @@ creatHandlerBufferPool(int cameraId,
                        int w,
                        int h,
                        int gfxFmt,
-                       int usage,
+                       uint64_t usage,
                        int nums)
 {
     HAL_TRACE_CALL(CAM_GLBL_DBG_HIGH);

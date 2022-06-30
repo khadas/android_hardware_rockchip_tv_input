@@ -256,7 +256,8 @@ int HinDevImpl::init(int id,int initType) {
     if (initType == TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
         mFrameType |= TYPF_SIDEBAND_WINDOW;
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
-        info.usage |= GRALLOC_USAGE_HW_COMPOSER;
+        info.usage |= GRALLOC_USAGE_HW_COMPOSER
+            | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
         mFirstRequestCapture = false;
         mRequestCaptureCount = 1;
     } else {

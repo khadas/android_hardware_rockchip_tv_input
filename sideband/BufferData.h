@@ -35,7 +35,7 @@ typedef struct stream_config {
     int width;
     int height;
     int format;
-    int usage;
+    uint64_t usage;
 } stream_config_t;
 
 typedef struct rt_stream_buffer {
