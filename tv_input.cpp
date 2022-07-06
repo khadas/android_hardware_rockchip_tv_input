@@ -110,6 +110,10 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
 	     else
 		event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
              */
+        if (!isHdmiIn) {
+            std::map<std::string, std::string> data;
+            s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
+        }
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
@@ -329,6 +333,15 @@ NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
     return 0;
 }
 
+static int tv_input_priv_cmd_from_app(const std::string action, const std::map<std::string, std::string> data) {
+    ALOGV("%s called", __func__);
+    if (s_TvInputPriv && s_TvInputPriv->isInitialized && s_TvInputPriv->mDev) {
+        s_TvInputPriv->mDev->deal_priv_message(action, data);
+        return 0;
+    }
+    return -EINVAL;
+}
+
 static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
             int stream_id, uint64_t buff_id, buffer_handle_t buffer, uint32_t seq) {
     ALOGV("%s called,req=%u", __func__,seq);
@@ -440,6 +453,7 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->device.set_preview_info = tv_input_set_preview_info;
         dev->device.set_preview_buffer = tv_input_set_preview_buffer;
 
+        dev->device.priv_cmd_from_app = tv_input_priv_cmd_from_app;
         dev->device.request_capture = tv_input_request_capture;
         dev->device.cancel_capture = tv_input_cancel_capture;
 

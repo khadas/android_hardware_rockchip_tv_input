@@ -350,7 +350,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 int HinDevImpl::makeHwcSidebandHandle() {
     buffer_handle_t buffer = NULL;
 
-    mSidebandWindow->allocateSidebandHandle(&buffer);
+    mSidebandWindow->allocateSidebandHandle(&buffer, -1);
     if (!buffer) {
         DEBUG_PRINT(3, "allocate buffer from sideband window failed!");
         return -1;
@@ -472,6 +472,8 @@ int HinDevImpl::start()
         DEBUG_PRINT(3, "Start v4l2 device failed:%d",ret);
         return ret;
     }
+
+    mSidebandWindow->allocateSidebandHandle(&mSignalHandle, HAL_PIXEL_FORMAT_BGR_888);
 
     ALOGD("Create Work Thread");
     mWorkThread = new WorkThread(this);
@@ -872,6 +874,11 @@ int HinDevImpl::release_buffer()
         mSidebandHandle = NULL;
     }
 
+    if (mSignalHandle) {
+        mSidebandWindow->freeBuffer(&mSignalHandle, 0);
+        mSignalHandle = NULL;
+    }
+
     if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
         if (!mPreviewRawHandle.empty()) {
             for (int i=0; i<mPreviewRawHandle.size(); i++) {
@@ -987,6 +994,19 @@ void HinDevImpl::wrapCaptureResultAndNotify(uint64_t buffId,buffer_handle_t hand
     // result.buffer = handle;  //if need
     if(mNotifyQueueCb != NULL)
     	mNotifyQueueCb(result);
+}
+
+int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::string, std::string> data) {
+    ALOGD("%s %s ", __FUNCTION__, action.c_str());
+    if (action.compare("hdmiinout") == 0) {
+        if (mFrameType & TYPF_SIDEBAND_WINDOW && NULL != mSidebandWindow) {
+            if (mSignalHandle != NULL) {
+                mSidebandWindow->show(mSignalHandle);
+            }
+        }
+        return 1;
+    }
+    return 0;
 }
 
 int HinDevImpl::workThread()

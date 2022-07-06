@@ -92,7 +92,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t remainBuffer(buffer_handle_t buffer);
     status_t dequeueBuffer(buffer_handle_t *buffer);
     status_t queueBuffer(buffer_handle_t buffer);
-    status_t allocateSidebandHandle(buffer_handle_t *handle);
+    status_t allocateSidebandHandle(buffer_handle_t *handle, int32_t format);
     int getBufferHandleFd(buffer_handle_t buffer);
     int getBufferLength(buffer_handle_t buffer);
 

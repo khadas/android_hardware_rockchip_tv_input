@@ -149,14 +149,14 @@ status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
     return ret;
 }
 
-status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle) {
+status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle, int32_t format) {
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
     int ret = -1;
 
     ret = mBuffMgr->Allocate(mSidebandInfo.width,
                         mSidebandInfo.height,
-                        mSidebandInfo.format,
+                        -1 == format?mSidebandInfo.format:format,
                         0,
                         common::GRALLOC,
                         &temp_buffer,

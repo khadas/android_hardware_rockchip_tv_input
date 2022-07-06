@@ -131,6 +131,7 @@ class HinDevImpl {
         int stop_device();
         int set_mode(int display_mode);
         buffer_handle_t getSindebandBufferHandle();
+        int deal_priv_message(const string action, const map<string, string> data);
         int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
 
         const tv_input_callback_ops_t* mTvInputCB;
@@ -196,6 +197,7 @@ class HinDevImpl {
         int mHinDevHandle;
         struct HinNodeInfo *mHinNodeInfo;
         sp<V4L2DeviceEvent>     mV4l2Event;
+        buffer_handle_t mSignalHandle = NULL;
         buffer_handle_t         mSidebandHandle;
         sp<RTSidebandWindow>    mSidebandWindow;
         int mFrameType;
