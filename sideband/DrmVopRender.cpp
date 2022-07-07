@@ -339,14 +339,19 @@ int DrmVopRender::FindSidebandPlane(int device) {
     int outputIndex = getOutputIndex(device);
     if (outputIndex < 0 ) {
         ALOGE("invalid device");
-        return false;
+        return -1;
     }
     DrmOutput *output= &mOutputs[outputIndex];
     if (!output->connected) {
         ALOGE("device is not connected,outputIndex=%d",outputIndex);
-        return false;
+        return -1;
     }
     //ALOGD("output->plane_res->count_planes %d", output->plane_res->count_planes);
+    if (output->plane_res == NULL) {
+        ALOGE("%s output->plane_res is NULL", __FUNCTION__);
+        mSidebandPlaneId = -1;
+        return -1;
+    }
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
         props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
@@ -594,6 +599,12 @@ bool DrmVopRender::ClearDrmPlaneContent(int device, int32_t width, int32_t heigh
     drmModeObjectPropertiesPtr props;
     drmModePropertyPtr prop;
     //props = drmModeObjectGetProperties(mDrmFd, output->crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+
+    if (output->plane_res == NULL) {
+        ALOGE("%s output->plane_res is NULL", __FUNCTION__);
+        prop = NULL;
+        return -1;
+    }
 
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
