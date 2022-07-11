@@ -529,7 +529,7 @@ void DrmVopRender::resetOutput(int index)
     mSidebandPlaneId = -1;
 }
 
-bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle) {
+bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio) {
     ALOGV("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
     int ret = 0;
     int plane_id = FindSidebandPlane(device);
@@ -573,10 +573,28 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
             if (plane_id > 0) {
                 dst_w = drmModeInfo.crtc->width;
                 dst_h = drmModeInfo.crtc->height;
+                int ratio_w = dst_w;
+                int ratio_h = dst_h;
+                if (displayRatio == SCREEN_16_9) {
+                    ratio_h = dst_w * 9 /16;
+                } else if (displayRatio == SCREEN_4_3) {
+                    ratio_h = dst_w * 3 /4;
+                }
+                if (dst_h < ratio_h) {
+                    ratio_h = dst_h;
+                    if (displayRatio == SCREEN_16_9) {
+                        ratio_w = dst_h * 16 /9;
+                    } else if (displayRatio == SCREEN_4_3) {
+                        ratio_w = dst_h * 4 /3;
+                    }
+                }
+                if (dst_w < ratio_w) {
+                    ratio_w = dst_w;
+                }
                 ret = drmModeSetPlane(mDrmFd, plane_id,
                           drmModeInfo.crtc->crtc_id, fb_id, flags,
-                          dst_left, dst_top,
-                          dst_w, dst_h,
+                          dst_left+(dst_w-ratio_w)/2, dst_top+(dst_h - ratio_h)/2,
+                          ratio_w, ratio_h,
                           0, 0,
                           src_w << 16, src_h << 16);
                 ALOGV("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",

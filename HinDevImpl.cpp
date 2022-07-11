@@ -498,6 +498,10 @@ int HinDevImpl::start()
         init_encodeserver(g_stream_dev_name.c_str(), mFrameWidth, mFrameHeight);
     }*/
 
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    property_get(TV_INPUT_DISPLAY_RATIO, prop_value, "0");
+    mDisplayRatio = (int)atoi(prop_value);
+
     mWorkThread = new WorkThread(this);
     mState = START;
     mOpen = true;
@@ -1183,9 +1187,14 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
             //mSidebandWindow->clearVopArea();
             stopRecord();
             if (mSignalHandle != NULL) {
-                mSidebandWindow->show(mSignalHandle);
+                mSidebandWindow->show(mSignalHandle, FULL_SCREEN);
             }
         }
+        return 1;
+    } else if (action.compare("refresh_hotcfg") == 0) {
+        char prop_value[PROPERTY_VALUE_MAX] = {0};
+        property_get(TV_INPUT_DISPLAY_RATIO, prop_value, "0");
+        mDisplayRatio = (int)atoi(prop_value);
         return 1;
     }
     return 0;
@@ -1297,7 +1306,7 @@ int HinDevImpl::workThread()
             }
 
             mSidebandWindow->show(
-                mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex]);
+                mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
 
 //encode:sendFrame
             if (gMppEnCodeServer != nullptr && gMppEnCodeServer->mThreadEnabled.load()) {

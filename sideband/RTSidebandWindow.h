@@ -107,7 +107,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int importHidlHandleBufferLocked(/*in&out*/buffer_handle_t& rawHandle);
     int buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
     int NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstHandle, int width, int height);
-    status_t show(buffer_handle_t buffer);
+    status_t show(buffer_handle_t buffer, int displayRadio);
     status_t clearVopArea();
 
  private:
