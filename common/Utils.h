@@ -59,6 +59,12 @@ enum FrameType{
     TYPE_STREAM_BUFFER_PRODUCER = 0x2,
 };
 
+enum DisplayRatio{
+    FULL_SCREEN = 0x0,
+    SCREEN_16_9 = 0x1,
+    SCREEN_4_3  = 0x2,
+};
+
 static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
     GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN |
     RK_GRALLOC_USAGE_WITHIN_4G | RK_GRALLOC_USAGE_PHY_CONTIG_BUFFER
@@ -69,6 +75,7 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
 #define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
 #define TV_INPUT_HAS_ENCODE "vendor.tvinput.encode"
+#define TV_INPUT_DISPLAY_RATIO "vendor.tvinput.displayratio"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \

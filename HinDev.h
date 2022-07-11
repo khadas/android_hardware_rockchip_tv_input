@@ -240,5 +240,6 @@ class HinDevImpl {
         int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         int mRecordCodingBuffIndex = 0;
+        int mDisplayRatio = FULL_SCREEN;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

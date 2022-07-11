@@ -302,7 +302,7 @@ status_t RTSidebandWindow::handleMessageExit() {
 status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     buffer_handle_t buffer = msg.streamBuffer.buffer;
     ALOGD("%s %d buffer: %p in", __FUNCTION__, __LINE__, buffer);
-    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer);
+    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer, FULL_SCREEN);
 
     mRenderingQueue.push_back(buffer);
     ALOGD("%s    mRenderingQueue.size() = %d", __FUNCTION__, (int32_t)mRenderingQueue.size());
@@ -310,8 +310,8 @@ status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     return 0;
 }
 
-status_t RTSidebandWindow::show(buffer_handle_t handle) {
-    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, handle);
+status_t RTSidebandWindow::show(buffer_handle_t handle, int displayRatio) {
+    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, handle, displayRatio);
     return 0;
 }
 
