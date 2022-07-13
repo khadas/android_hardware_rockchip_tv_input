@@ -59,6 +59,14 @@ bool DrmVopRender::initialize()
     }
     ALOGE("mDrmFd = %d", mDrmFd);
 
+    for (const auto &fbidMap : mFbidMap) {
+        int fbid = fbidMap.second;
+        ALOGE("%s find last fbid=%d", __FUNCTION__, fbid);
+        if (drmModeRmFB(mDrmFd, fbid))
+            ALOGE("Failed to rm fb %d", fbid);
+    }
+    mFbidMap.clear();
+
     memset(&mOutputs, 0, sizeof(mOutputs));
     mInitialized = true;
     int ret = hw_get_module(GRALLOC_HARDWARE_MODULE_ID,
@@ -479,8 +487,8 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         ALOGV("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
         ret = drmModeAddFB2(mDrmFd, bo.width, bo.height, bo.format, bo.gem_handles,\
                      bo.pitches, bo.offsets, &bo.fb_id, 0);
-        ALOGV("drmModeAddFB2 ret = %s", strerror(ret));
         fbid = bo.fb_id;
+        ALOGD("drmModeAddFB2 ret = %s fbid=%d", strerror(ret), fbid);
         mFbidMap.insert(std::make_pair(fd, fbid));
     } else {
         fbid = it->second;

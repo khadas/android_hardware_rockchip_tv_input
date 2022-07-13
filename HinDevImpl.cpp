@@ -1280,6 +1280,10 @@ int HinDevImpl::workThread()
         } else {
             DEBUG_PRINT(mDebugLevel, "VIDIOC_DQBUF successful.mDumpType=%d,mDumpFrameCount=%d",mDumpType,mDumpFrameCount);
         }
+        if (mState != START) {
+            //DEBUG_PRINT(3, "mState != START skip");
+            return NO_ERROR;
+        }
 #ifdef DUMP_YUV_IMG
             if (mDumpType == 0 && mDumpFrameCount > 0) {
                 char fileName[128] = {0};
