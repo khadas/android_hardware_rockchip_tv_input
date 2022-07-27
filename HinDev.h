@@ -74,6 +74,8 @@ typedef struct tv_record_buffer_info {
     buffer_handle_t outHandle;
     int width;
     int height;
+    int verStride;
+    int horStride;
     bool isCoding;
 } tv_record_buffer_info_t;
 
@@ -166,6 +168,8 @@ class HinDevImpl {
         int init_encodeserver(MppEncodeServer::MetaInfo* info);
     void deinit_encodeserver();
         void stopRecord();
+        void buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int srcWidth, int srcHeight,
+            buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride);
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -220,6 +224,7 @@ class HinDevImpl {
         sp<WorkThread>   mWorkThread;
         // sp<PreviewBuffThread>   mPreviewBuffThread;
         mutable Mutex mLock;
+        mutable Mutex mBufferLock;
         int mHinDevHandle;
         struct HinNodeInfo *mHinNodeInfo;
         sp<V4L2DeviceEvent>     mV4l2Event;

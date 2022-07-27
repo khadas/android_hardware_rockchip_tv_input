@@ -230,6 +230,7 @@ HinDevImpl::HinDevImpl()
 }
 
 int HinDevImpl::init(int id,int initType) {
+    DEBUG_PRINT(3, "%s id=%d, initType=%d", __FUNCTION__, id, initType);
     if(get_HdmiIn(true) <= 0 || getNativeWindowFormat(mPixelFormat) == -1){
 	DEBUG_PRINT(3, "[%s %d] hdmi isnt in", __FUNCTION__, __LINE__);
         return -1;
@@ -372,7 +373,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 int HinDevImpl::makeHwcSidebandHandle() {
     buffer_handle_t buffer = NULL;
 
-    mSidebandWindow->allocateSidebandHandle(&buffer, -1, -1, -1);
+    mSidebandWindow->allocateSidebandHandle(&buffer, -1, -1, -1, -1);
     if (!buffer) {
         DEBUG_PRINT(3, "allocate buffer from sideband window failed!");
         return -1;
@@ -495,7 +496,7 @@ int HinDevImpl::start()
         return ret;
     }
 
-    mSidebandWindow->allocateSidebandHandle(&mSignalHandle, -1, -1, HAL_PIXEL_FORMAT_BGR_888);
+    mSidebandWindow->allocateSidebandHandle(&mSignalHandle, -1, -1, HAL_PIXEL_FORMAT_BGR_888, -1);
 
     ALOGD("Create Work Thread");
 
@@ -523,6 +524,7 @@ int HinDevImpl::stop()
     ALOGD("%s %d", __FUNCTION__, __LINE__);
     int ret;
     mState = STOPED;
+    Mutex::Autolock autoLock(mBufferLock);
 
     if(gMppEnCodeServer != nullptr) {
         ALOGD("zj add file: %s func %s line %d \n",__FILE__,__FUNCTION__,__LINE__);
@@ -1104,6 +1106,10 @@ void HinDevImpl::stopRecord() {
 }
 
 void HinDevImpl::doRecordCmd(const map<string, string> data) {
+    Mutex::Autolock autoLock(mBufferLock);
+    if (mState != START) {
+        return;
+    }
     int width = mFrameWidth;
     int height = mFrameHeight;
     if (mFrameFps < 1) {
@@ -1120,47 +1126,40 @@ void HinDevImpl::doRecordCmd(const map<string, string> data) {
             if (it.second.compare("0") == 0) {
                 allowRecord = false;
             } else if (it.second.compare("1") == 0) {
-                if (!mRecordHandle.empty()){
+                if (mRecordHandle.empty()) {
+                    mRecordHandle.resize(SIDEBAND_RECORD_BUFF_CNT);
                     for (int i=0; i<mRecordHandle.size(); i++) {
-                        mSidebandWindow->freeBuffer(&mRecordHandle[i].outHandle, 1);
-                        mRecordHandle[i].outHandle = NULL;
+                        mSidebandWindow->allocateSidebandHandle(&mRecordHandle[i].outHandle,
+                            width, height, HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                        mRecordHandle[i].width = width;
+                        mRecordHandle[i].height = height;
+                        mRecordHandle[i].verStride = width;//_ALIGN(width, 16);
+                        mRecordHandle[i].horStride = _ALIGN(height, 16);
                     }
-                    mRecordHandle.clear();
-                }
-                mRecordHandle.resize(SIDEBAND_RECORD_BUFF_CNT);
-                mRecordCodingBuffIndex = 0;
-                if (height == 1080) {
-                    height = 1088;
+                    ALOGD("%s all recordhandle %d %d", __FUNCTION__, mRecordHandle[0].verStride,mRecordHandle[0].horStride);
                 }
                 for (int i=0; i<mRecordHandle.size(); i++) {
-                    mSidebandWindow->allocateSidebandHandle(&mRecordHandle[i].outHandle,
-                        width, height, HAL_PIXEL_FORMAT_YCrCb_NV12);
                     mRecordHandle[i].isCoding = false;
-                    mRecordHandle[i].width = width;
-                    mRecordHandle[i].height = height;
                 }
-
+                mRecordCodingBuffIndex = 0;
                 allowRecord = true;
             } else {
                 return;
             }
         } else if (it.first.compare("storePath") == 0) {
             storePath = it.second;
-        } else if (it.first.compare("width")) {
+        /*} else if (it.first.compare("width")) {
             width = stoi(it.second);
         } else if (it.first.compare("height")) {
             height = stoi(it.second);
         } else if (it.first.compare("fps")) {
-            fps = stoi(it.second);
+            fps = stoi(it.second);*/
         }
     }
 
     if (fps < 1) {
         fps = 60;
         ALOGD("fps == 0");
-    }
-    if (V4L2_PIX_FMT_NV24 == mPixelFormat && fps > 50) {
-        fps = 30;
     }
 
     MppEncodeServer::MetaInfo info;
@@ -1208,62 +1207,54 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
     return 0;
 }
 
-int HinDevImpl::getRecordBufferFd(int previewHandlerIndex) {
-    if(mRecordHandle.empty()) {
-        return -1;
-    } else {
-        if (mRecordHandle[mRecordCodingBuffIndex].isCoding) {
-            return -1;
+void HinDevImpl::buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int srcWidth, int srcHeight,
+        buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride) {
+    if (V4L2_PIX_FMT_BGR24 == srcFmt
+            || V4L2_PIX_FMT_NV12 == srcFmt
+            || V4L2_PIX_FMT_NV16 == srcFmt) {
+        RgaCropScale::Params src, dst;
+        src.fd = srcHandle->data[0];
+        src.offset_x = 0;
+        src.offset_y = 0;
+        src.width_stride = srcWidth;
+        src.height_stride = srcHeight;
+        src.width = srcWidth;
+        src.height = srcHeight;
+        int rgaSrcFormat = srcFmt;
+        if (V4L2_PIX_FMT_BGR24 == srcFmt) {
+            rgaSrcFormat = RK_FORMAT_BGR_888;
+        } else if (V4L2_PIX_FMT_NV12 == srcFmt) {
+            rgaSrcFormat = RK_FORMAT_YCbCr_420_SP;
+        } else if (V4L2_PIX_FMT_NV16 == srcFmt) {
+            rgaSrcFormat = RK_FORMAT_YCbCr_422_SP;
         }
-    }
+        src.fmt = rgaSrcFormat;
+        src.mirror = false;
 
-    int recordFd = -1;
-    tv_record_buffer_info_t recordBuffer = mRecordHandle[mRecordCodingBuffIndex];
-
-    if (V4L2_PIX_FMT_BGR24 == mPixelFormat
-            || V4L2_PIX_FMT_NV12 == mPixelFormat
-            || V4L2_PIX_FMT_NV16 == mPixelFormat) {
-        RgaCropScale::Params original, out;
-        original.fd = mHinNodeInfo->bufferArray[previewHandlerIndex].m.planes[0].m.fd;
-        original.offset_x = 0;
-        original.offset_y = 0;
-        original.width_stride = mFrameWidth;
-        original.height_stride = mFrameHeight;
-        original.width = mFrameWidth;
-        original.height = mFrameHeight;
-        int rgaFormat = mPixelFormat;
-        if (V4L2_PIX_FMT_BGR24 == mPixelFormat) {
-            rgaFormat = RK_FORMAT_BGR_888;
-        } else if (V4L2_PIX_FMT_NV16 == mPixelFormat) {
-            rgaFormat = RK_FORMAT_YCbCr_422_SP;
-        } else if (V4L2_PIX_FMT_NV12 == mPixelFormat) {
-            rgaFormat = RK_FORMAT_YCbCr_420_SP;
+        dst.fd = dstHandle->data[0];
+        dst.offset_x = 0;
+        dst.offset_y = 0;
+        dst.width_stride = dstWStride;
+        dst.height_stride = dstHStride;
+        dst.width = dstWidth;
+        dst.height = dstHeight;
+        int rgaDstFormat = dstFmt;
+        if (V4L2_PIX_FMT_BGR24 == dstFmt) {
+            rgaDstFormat = RK_FORMAT_BGR_888;
+        } else if (V4L2_PIX_FMT_NV12 == dstFmt) {
+            rgaDstFormat = RK_FORMAT_YCbCr_420_SP;
+        } else if (V4L2_PIX_FMT_NV16 == dstFmt) {
+            rgaDstFormat = RK_FORMAT_YCbCr_422_SP;
         }
-        original.fmt = rgaFormat;
-        original.mirror = false;
-
-        out.fd = recordBuffer.outHandle->data[0];
-        out.offset_x = 0;
-        out.offset_y = 0;
-        out.width_stride = recordBuffer.width;
-        out.height_stride = recordBuffer.height;
-        out.width = recordBuffer.width;
-        out.height = recordBuffer.height;
-        out.fmt = RK_FORMAT_YCbCr_420_SP;
-        out.mirror = false;
-        RgaCropScale::CropScaleNV12Or21(&original, &out);
-    } else if (V4L2_PIX_FMT_NV24 == mPixelFormat) {
-        mSidebandWindow->NV24ToNV12(
-            mHinNodeInfo->buffer_handle_poll[previewHandlerIndex],
-            recordBuffer.outHandle,
-            mFrameWidth, mFrameHeight);
-    } else {
-        return -1;
+        dst.fmt = rgaDstFormat;
+        dst.mirror = false;
+        RgaCropScale::CropScaleNV12Or21(&src, &dst);
+    } else if (V4L2_PIX_FMT_NV24 == srcFmt
+            && V4L2_PIX_FMT_NV12 == dstFmt) {
+        mSidebandWindow->NV24ToNV12(srcHandle, dstHandle, srcWidth, srcHeight);
+    } else if (srcFmt == dstFmt) {
+        mSidebandWindow->buffDataTransfer2(srcHandle, dstHandle);
     }
-    recordFd = recordBuffer.outHandle->data[0];
-    recordBuffer.isCoding = true;
-    //DEBUG_PRINT(3, "record out.fd %d", recordFd);
-    return recordFd;
 }
 
 int HinDevImpl::workThread()
@@ -1324,10 +1315,20 @@ int HinDevImpl::workThread()
             if (gMppEnCodeServer != nullptr && gMppEnCodeServer->mThreadEnabled.load()) {
                 RKMppEncApi::MyDmaBuffer_t inDmaBuf;
                 memset(&inDmaBuf, 0, sizeof(RKMppEncApi::MyDmaBuffer_t));
-                inDmaBuf.fd = getRecordBufferFd(currPreviewHandlerIndex);
+                inDmaBuf.fd = -1;
+                if(!mRecordHandle.empty()) {
+                    tv_record_buffer_info_t recordBuffer = mRecordHandle[mRecordCodingBuffIndex];
+                    if (!recordBuffer.isCoding) {
+                        buffDataTransfer(mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mPixelFormat,
+                            mFrameWidth, mFrameHeight,
+                            recordBuffer.outHandle, V4L2_PIX_FMT_NV12,
+                            recordBuffer.width, recordBuffer.height, recordBuffer.verStride, recordBuffer.horStride);
+                        inDmaBuf.fd = recordBuffer.outHandle->data[0];
+                    }
+                }
                 if (inDmaBuf.fd == -1) {
                     DEBUG_PRINT(3, "skip record");
-                } else {
+                } else if (gMppEnCodeServer != nullptr) {
                 inDmaBuf.size = gMppEnCodeServer->mEncoder->mHorStride *
                                 gMppEnCodeServer->mEncoder->mVerStride * 3 / 2;
                 inDmaBuf.handler =
