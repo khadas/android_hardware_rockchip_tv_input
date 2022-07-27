@@ -305,6 +305,14 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 		ALOGD(" v4l device %s found", de->d_name);
 		char v4l2DevicePath[kMaxDevicePathLen];
 		char v4l2DeviceDriver[16];
+		char gadget_video[100] = {0};
+
+		sprintf(gadget_video, "/sys/class/video4linux/%s/function_name", de->d_name);
+		if (access(gadget_video, F_OK) == 0) {
+			ALOGW("/dev/%s is uvc gadget device, don't open it!", de->d_name);
+			continue;
+		}
+
 		snprintf(v4l2DevicePath, kMaxDevicePathLen,"%s%s", kDevicePath, de->d_name);
 		videofd = open(v4l2DevicePath, O_RDWR);
 		if (videofd < 0){
