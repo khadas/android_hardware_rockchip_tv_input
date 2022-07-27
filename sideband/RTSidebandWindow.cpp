@@ -157,7 +157,7 @@ status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
 }
 
 status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle,
-        int width, int32_t height, int32_t format) {
+        int width, int32_t height, int32_t format, uint64_t usage) {
     buffer_handle_t temp_buffer = NULL;
     uint32_t stride = 0;
     int ret = -1;
@@ -165,7 +165,7 @@ status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle,
     ret = mBuffMgr->Allocate(-1 == width?mSidebandInfo.width:width,
                         -1 == height?mSidebandInfo.height:height,
                         -1 == format?mSidebandInfo.format:format,
-                        0,
+                        -1 == usage?0:usage,
                         common::GRALLOC,
                         &temp_buffer,
                         &stride);
@@ -389,6 +389,33 @@ int RTSidebandWindow::buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_
             mBuffMgr->Unlock(srcHandle);
             ALOGD("%s end", __FUNCTION__);
             return 0;
+    }
+    return -1;
+}
+
+int RTSidebandWindow::buffDataTransfer2(buffer_handle_t srcHandle, buffer_handle_t dstHandle) {
+    if (srcHandle && dstHandle) {
+        unsigned char* tmpSrcPtr = NULL;
+        unsigned char* tmpDstPtr = NULL;
+        int srcDatasize = -1;
+        int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+        mBuffMgr->Lock(srcHandle, lockMode, 0, 0, mBuffMgr->GetWidth(srcHandle), mBuffMgr->GetHeight(srcHandle), (void**)&tmpSrcPtr);
+        for (int i = 0; i < mBuffMgr->GetNumPlanes(srcHandle); i++) {
+            srcDatasize += mBuffMgr->GetPlaneSize(srcHandle, i);
+        }
+        mBuffMgr->LockLocked(dstHandle, lockMode, 0, 0, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle), (void**)&tmpDstPtr);
+        int dstDatesize = -1;
+        for (int i = 0; i < mBuffMgr->GetNumPlanes(dstHandle); i++) {
+            dstDatesize += mBuffMgr->GetPlaneSize(dstHandle, i);
+        }
+        //ALOGD("%s %d %d", __FUNCTION__, srcDatasize, dstDatesize);
+
+        std::memcpy(tmpDstPtr, tmpSrcPtr, dstDatesize);
+
+        mBuffMgr->UnlockLocked(dstHandle);
+        mBuffMgr->Unlock(srcHandle);
+
+        return 0;
     }
     return -1;
 }
