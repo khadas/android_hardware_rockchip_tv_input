@@ -1190,10 +1190,11 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
         doRecordCmd(data);
         return 1;
     } else if (action.compare("hdmiinout") == 0) {
+        Mutex::Autolock autoLock(mBufferLock);
         if (mFrameType & TYPF_SIDEBAND_WINDOW && NULL != mSidebandHandle) {
             //mSidebandWindow->clearVopArea();
             stopRecord();
-            if (mSignalHandle != NULL) {
+            if (mSignalHandle != NULL && mWorkThread != NULL) {
                 mSidebandWindow->show(mSignalHandle, FULL_SCREEN);
             }
         }
