@@ -44,6 +44,7 @@ DrmVopRender* DrmVopRender::GetInstance() {
 
 bool DrmVopRender::initialize()
 {
+    Mutex::Autolock autoLock(mVopPlaneLock);
     ALOGE("initialize in");
     /*if (mInitialized) {
         ALOGE(">>Drm object has been initialized");
@@ -85,6 +86,7 @@ void DrmVopRender::deinitialize()
 {
     ALOGE("deinitialize in");
     if(!mInitialized) return;
+    Mutex::Autolock autoLock(mVopPlaneLock);
     for (int i = 0; i < OUTPUT_MAX; i++) {
         resetOutput(i);
     }
@@ -104,6 +106,7 @@ void DrmVopRender::deinitialize()
 }
 
 void DrmVopRender::DestoryFB() {
+    Mutex::Autolock autoLock(mVopPlaneLock);
     for (const auto &fbidMap : mFbidMap) {
         int fbid = fbidMap.second;
         ALOGV("%s fbid=%d", __FUNCTION__, fbid);
@@ -114,18 +117,43 @@ void DrmVopRender::DestoryFB() {
 }
 
 bool DrmVopRender::detect() {
-
+    Mutex::Autolock autoLock(mVopPlaneLock);
     detect(HWC_DISPLAY_PRIMARY);
+    mEnableSkipFrame = false;
     return true;
 }
 
 bool DrmVopRender::detect(int device)
 {
+    if (!mInitialized) {
+        return false;
+    }
     ALOGE("detect device=%d", device);
     mSidebandPlaneId = -1;
     int outputIndex = getOutputIndex(device);
     if (outputIndex < 0 ) {
         return false;
+    }
+
+    char prop_name[PROPERTY_VALUE_MAX] = {0};
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    for (int i=0; i< MAX_DISPLAY_NUM; i++) {
+        sprintf(prop_name, "vendor.hwc.device.display-%d", i);
+        property_get(prop_name, prop_value, "0");
+        if (strcmp(prop_value, "0") == 0) {
+            break;
+        }
+        bool connected = strstr(prop_value, ":connected");
+        if (mDisplayInfos.empty() || i > mDisplayInfos.size()-1) {
+            DisplayInfo info;
+            memset(&info, 0, sizeof(info));
+            info.display_id = i;
+            info.connected = connected;
+            ALOGE("==========push display info %d==================", i);
+            mDisplayInfos.push_back(info);
+        } else {
+            mDisplayInfos[i].connected = connected;
+        }
     }
 
     resetOutput(outputIndex);
@@ -271,7 +299,7 @@ bool DrmVopRender::detect(int device)
             break;
         }
         output->plane_res = drmModeGetPlaneResources(mDrmFd);
-        ALOGD("drmModeGetPlaneResources successful.");
+        ALOGD("drmModeGetPlaneResources successful. index=%d", i);
         output->mDrmModeInfos.push_back(drmModeInfo);
         //break;
     }
@@ -340,6 +368,7 @@ int DrmVopRender::FindSidebandPlane(int device) {
     if (mSidebandPlaneId != -1) {
         return mSidebandPlaneId;
     }
+    Mutex::Autolock autoLock(mVopPlaneLock);
     drmModePlanePtr plane;
     drmModeObjectPropertiesPtr props;
     drmModePropertyPtr prop;
@@ -426,6 +455,7 @@ int DrmVopRender::getFbLength(buffer_handle_t handle) {
 }
 
 int DrmVopRender::getFbid(buffer_handle_t handle) {
+    Mutex::Autolock autoLock(mVopPlaneLock);
     if (!handle) {
         ALOGE("%s buffer_handle_t is NULL.", __FUNCTION__);
         return -1;
@@ -537,11 +567,45 @@ void DrmVopRender::resetOutput(int index)
     mSidebandPlaneId = -1;
 }
 
+bool DrmVopRender::needRedetect() {
+    char prop_name[PROPERTY_VALUE_MAX] = {0};
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    for (int i=0; i<mDisplayInfos.size(); i++) {
+        sprintf(prop_name, "vendor.hwc.device.display-%d", i);
+        property_get(prop_name, prop_value, "0");
+        if (strstr(prop_value, ":connected")) {
+            if(!mDisplayInfos[i].connected) {
+                return true;
+            }
+        } else {
+            if(mDisplayInfos[i].connected) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio) {
     ALOGV("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
+    if (needRedetect() && mInitialized) {
+        ALOGE("=================needRedetect===================");
+        DestoryFB();
+        ClearDrmPlaneContent(device, 0, 0);
+        detect(HWC_DISPLAY_PRIMARY);
+        mSkipFrameStartTime = systemTime();
+        mEnableSkipFrame = true;
+        return false;
+    } else if (mEnableSkipFrame) {
+        nsecs_t now = systemTime();
+        if (now - mSkipFrameStartTime < SKIP_FRAME_TIME) {
+            return false;
+        }
+    }
+
     int ret = 0;
     int plane_id = FindSidebandPlane(device);
-    int fb_id = getFbid(handle);
+    int fb_id = plane_id>0?getFbid(handle):-1;
     int flags = 0;
     int src_left = 0;
     int src_top = 0;
@@ -571,6 +635,11 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     }
     src_w = width;
     src_h = height;
+
+    if (!mInitialized || plane_id < 0 || fb_id < 0) {
+        return false;
+    }
+
     //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_FORMAT, handle, &src_format);
     //ALOGV("dst_w %d dst_h %d src_w %d src_h %d in", dst_w, dst_h, src_w, src_h);
     //ALOGV("mDrmFd=%d plane_id=%d, output->crtc->crtc_id=%d fb_id=%d flags=%d", mDrmFd, plane_id, output->crtc->crtc_id, fb_id, flags);
@@ -616,6 +685,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
 
 bool DrmVopRender::ClearDrmPlaneContent(int device, int32_t width, int32_t height)
 {
+    Mutex::Autolock autoLock(mVopPlaneLock);
     ALOGD("%s come in, device=%d", __FUNCTION__, device);
     bool ret = true;
     int plane_id = 0;//FindSidebandPlane(device);
