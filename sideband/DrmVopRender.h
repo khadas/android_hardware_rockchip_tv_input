@@ -22,6 +22,7 @@
 #include <hardware/hwcomposer_defs.h>
 #include <map>
 #include <vector>
+#include <utils/threads.h>
 
 extern "C" {
 #include "xf86drm.h"
@@ -42,6 +43,10 @@ enum {
     DEFAULT_DRM_FB_HEIGHT = 1080,
 };
 #endif
+
+#define MAX_DISPLAY_NUM 10
+#define SKIP_FRAME_TIME 2000000000
+
 struct plane_prop {
   int crtc_id;
   int fb_id;
@@ -99,6 +104,7 @@ private:
     // map device type to output index, return -1 if not mapped
     inline int getOutputIndex(int device);
     std::map<int, int> mFbidMap;
+    bool needRedetect();
 private:
     // DRM object index
     enum {
@@ -138,6 +144,16 @@ private:
         int panelOrientation;
     } mOutputs[OUTPUT_MAX];
 
+    typedef struct DisplayInfo {
+        int display_id = -1;
+        //int crtc_id = -1;
+        bool connected;
+    } DisplayInfo_t;
+
+    mutable Mutex mVopPlaneLock;
+    std::vector<DisplayInfo_t> mDisplayInfos;
+    bool mEnableSkipFrame;
+    nsecs_t mSkipFrameStartTime = 0;
     int mDrmFd;
     int mSidebandPlaneId;
    // Mutex mLock;
