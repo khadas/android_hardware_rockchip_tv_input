@@ -22,6 +22,7 @@
 namespace android {
 
 #define ALIGN_DOWN( value, base)     (value & (~(base-1)) )
+#define ALIGN(x, a) (((x) + (a)-1) & ~((a)-1))
 
 DrmVopRender::DrmVopRender()
     : mDrmFd(0)
@@ -506,7 +507,11 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.gem_handles[1] = gem_handle;
             bo.offsets[1] = bo.pitches[1] * bo.height;
         } else if (src_format == HAL_PIXEL_FORMAT_YCbCr_444_888) {
-            bo.pitches[1] = bo.pitches[0] * 2;
+            if (src_w == src_stride) {
+                bo.pitches[1] = bo.pitches[0] * 2;
+            } else {
+                bo.pitches[1] = ALIGN(src_w * 2, 64);
+            }
             bo.gem_handles[1] = gem_handle;
             bo.offsets[1] = bo.pitches[0] * bo.height;
         }
@@ -514,7 +519,8 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.width = src_w / 1.25;
             bo.width = ALIGN_DOWN(bo.width, 2);
         }
-        ALOGV("width=%d,height=%d,format=%x,fd=%d,src_stride=%d",bo.width, bo.height, bo.format, fd, src_stride);
+        ALOGD("width=%d,height=%d,format=%x,fd=%d,src_stride=%d, pitched=%d-%d",
+            bo.width, bo.height, bo.format, fd, src_stride, bo.pitches[0], bo.pitches[1]);
         ret = drmModeAddFB2(mDrmFd, bo.width, bo.height, bo.format, bo.gem_handles,\
                      bo.pitches, bo.offsets, &bo.fb_id, 0);
         fbid = bo.fb_id;
