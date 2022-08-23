@@ -98,7 +98,7 @@ public:
     bool ClearDrmPlaneContent(int device, int32_t width, int32_t height);
 private:
     void resetOutput(int index);
-    int FindSidebandPlane(int device);
+    bool FindSidebandPlane(int device);
     uint32_t getDrmEncoder(int device);
 
     // map device type to output index, return -1 if not mapped
@@ -120,6 +120,7 @@ private:
 
         drmModeObjectPropertiesPtr props;
 
+        char crtc_plane_mask[255];
         int plane_id = -1;
         int crtc_id = -1;
     } DrmModeInfo_t;
@@ -155,7 +156,6 @@ private:
     bool mEnableSkipFrame;
     nsecs_t mSkipFrameStartTime = 0;
     int mDrmFd;
-    int mSidebandPlaneId;
    // Mutex mLock;
     const gralloc_module_t *gralloc_;
 };

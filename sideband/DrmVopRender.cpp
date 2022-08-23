@@ -28,7 +28,6 @@ DrmVopRender::DrmVopRender()
     : mDrmFd(0)
 {
     memset(&mOutputs, 0, sizeof(mOutputs));
-    mSidebandPlaneId = -1;
     ALOGE("DrmVopRender");
 }
 
@@ -130,7 +129,6 @@ bool DrmVopRender::detect(int device)
         return false;
     }
     ALOGE("detect device=%d", device);
-    mSidebandPlaneId = -1;
     int outputIndex = getOutputIndex(device);
     if (outputIndex < 0 ) {
         return false;
@@ -298,6 +296,27 @@ bool DrmVopRender::detect(int device)
         if (!drmModeInfo.crtc) {
             ALOGE("failed to get drm crtc");
             break;
+        } else {
+            drmModeObjectPropertiesPtr props;
+            drmModePropertyPtr prop;
+            props = drmModeObjectGetProperties(mDrmFd, drmModeInfo.crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+            if (props) {
+                for (uint32_t i = 0; i < props->count_props; i++) {
+                    prop = drmModeGetProperty(mDrmFd, props->props[i]);
+                    if (!strcmp(prop->name, "PLANE_MASK")) {
+                        uint64_t plane_mask_value = props->prop_values[i];
+                        //ALOGD("PLANE_MASK=%d", (int)plane_mask_value);
+                        for (i = 0; i < prop->count_enums; i++) {
+                            uint64_t enums_value = 1LL << prop->enums[i].value;
+                            if ((plane_mask_value & enums_value) == enums_value) {
+                                strcpy(drmModeInfo.crtc_plane_mask+strlen(drmModeInfo.crtc_plane_mask), prop->enums[i].name);
+                            }
+                        }
+                    }
+                    drmModeFreeProperty(prop);
+                }
+                drmModeFreeObjectProperties(props);
+            }
         }
         output->plane_res = drmModeGetPlaneResources(mDrmFd);
         ALOGD("drmModeGetPlaneResources successful. index=%d", i);
@@ -310,7 +329,7 @@ bool DrmVopRender::detect(int device)
     } else {
         for (int i=0; i<output->mDrmModeInfos.size(); i++) {
             if (output->mDrmModeInfos[i].crtc) {
-               ALOGD("final  crtc->crtc_id %d", output->mDrmModeInfos[i].crtc->crtc_id);
+               ALOGD("final  crtc->crtc_id %d %s", output->mDrmModeInfos[i].crtc->crtc_id, output->mDrmModeInfos[i].crtc_plane_mask);
                output->mDrmModeInfos[i].props = drmModeObjectGetProperties(mDrmFd, output->mDrmModeInfos[i].crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
                if (!output->mDrmModeInfos[i].props) {
                    ALOGE("Failed to found props crtc[%d] %s\n", output->mDrmModeInfos[i].crtc->crtc_id, strerror(errno));
@@ -365,10 +384,7 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
   }
 }
 
-int DrmVopRender::FindSidebandPlane(int device) {
-    if (mSidebandPlaneId != -1) {
-        return mSidebandPlaneId;
-    }
+bool DrmVopRender::FindSidebandPlane(int device) {
     Mutex::Autolock autoLock(mVopPlaneLock);
     drmModePlanePtr plane;
     drmModeObjectPropertiesPtr props;
@@ -377,19 +393,24 @@ int DrmVopRender::FindSidebandPlane(int device) {
     int outputIndex = getOutputIndex(device);
     if (outputIndex < 0 ) {
         ALOGE("invalid device");
-        return -1;
+        return false;
     }
     DrmOutput *output= &mOutputs[outputIndex];
     if (!output->connected) {
         ALOGE("device is not connected,outputIndex=%d",outputIndex);
-        return -1;
+        return false;
     }
     //ALOGD("output->plane_res->count_planes %d", output->plane_res->count_planes);
     if (output->plane_res == NULL) {
         ALOGE("%s output->plane_res is NULL", __FUNCTION__);
-        mSidebandPlaneId = -1;
-        return -1;
+        return false;
     }
+    if (!output->mDrmModeInfos.empty()) {
+        for (int i=0; i<output->mDrmModeInfos.size(); i++) {
+            output->mDrmModeInfos[i].plane_id = -1;
+        }
+    }
+
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
         props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
@@ -397,33 +418,35 @@ int DrmVopRender::FindSidebandPlane(int device) {
             ALOGE("Failed to found props plane[%d] %s\n",plane->plane_id, strerror(errno));
            return -ENODEV;
         }
+        int plane_id;
         for (uint32_t j = 0; j < props->count_props; j++) {
             prop = drmModeGetProperty(mDrmFd, props->props[j]);
             if (!strcmp(prop->name, "ASYNC_COMMIT")) {
                 ALOGV("find ASYNC_COMMIT plane id=%d value=%lld", plane->plane_id, (long long)props->prop_values[j]);
                 if (props->prop_values[j] != 0) {
-                    find_plan_id = plane->plane_id;
-                    if (prop)
-                        drmModeFreeProperty(prop);
-                    if (find_plan_id > 0) {
-                        ALOGD("find_plan_id=%d", find_plan_id);
-                        if (!output->mDrmModeInfos.empty()) {
-                            for (int k=0; k<output->mDrmModeInfos.size(); k++) {
-                                int plane_id = output->mDrmModeInfos[k].plane_id;
-                                if (plane_id > 0) {
-                                    continue;
-                                }
-                                output->mDrmModeInfos[k].plane_id = find_plan_id;
-                                ALOGD("set plan_id=%d  to pos=%d", find_plan_id, k);
+                    plane_id = plane->plane_id;
+                }
+            } else if (plane_id > 0 && !strcmp(prop->name, "NAME")) {
+                if (prop->count_enums > 0) {
+                    char* win_name = strstr(prop->enums[0].name, "-");
+                    if (win_name && !output->mDrmModeInfos.empty()) {
+                        char plane_name[10] = {""};
+                        strncpy(plane_name, prop->enums[0].name, strlen(prop->enums[0].name)-strlen(win_name));
+                        for (int k=0; k<output->mDrmModeInfos.size(); k++) {
+                            ALOGV("crtc_plane_mask=%s  plane_name=%s", output->mDrmModeInfos[k].crtc_plane_mask, plane_name);
+                            if (strstr(output->mDrmModeInfos[k].crtc_plane_mask, plane_name)) {
+                                output->mDrmModeInfos[k].plane_id = plane_id;
+                                ALOGV("set plan_id=%d crtc_id=%d to pos=%d", plane_id, output->mDrmModeInfos[k].crtc->crtc_id, k);
+                                find_plan_id = plane_id;
                                 break;
                             }
                         }
-                        mSidebandPlaneId = find_plan_id;
-                        //break;
                     }
-
-                    break;
                 }
+                if (prop) {
+                    drmModeFreeProperty(prop);
+                }
+                break;
             }
             if (prop)
                 drmModeFreeProperty(prop);
@@ -432,15 +455,8 @@ int DrmVopRender::FindSidebandPlane(int device) {
             drmModeFreeObjectProperties(props);
         if(plane)
             drmModeFreePlane(plane);
-        //if (find_plan_id > 0) {
-        //    break;
-        //}
     }
-    if (find_plan_id == 0) {
-       mSidebandPlaneId = -1;
-       return -1;
-    }
-    return find_plan_id;
+    return find_plan_id > 0;
 }
 
 int DrmVopRender::getFbLength(buffer_handle_t handle) {
@@ -570,7 +586,6 @@ void DrmVopRender::resetOutput(int index)
     if (output->fbHandle) {
         output->fbHandle = 0;
     }
-    mSidebandPlaneId = -1;
 }
 
 bool DrmVopRender::needRedetect() {
@@ -610,8 +625,8 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     }
 
     int ret = 0;
-    int plane_id = FindSidebandPlane(device);
-    int fb_id = plane_id>0?getFbid(handle):-1;
+    bool findAvailedPlane = FindSidebandPlane(device);
+    int fb_id = findAvailedPlane?getFbid(handle):-1;
     int flags = 0;
     int src_left = 0;
     int src_top = 0;
@@ -642,7 +657,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     src_w = width;
     src_h = height;
 
-    if (!mInitialized || plane_id < 0 || fb_id < 0) {
+    if (!mInitialized || !findAvailedPlane || fb_id < 0) {
         return false;
     }
 
@@ -652,7 +667,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     if (!output->mDrmModeInfos.empty()) {
         for (int i=0; i<output->mDrmModeInfos.size(); i++) {
             DrmModeInfo_t drmModeInfo = output->mDrmModeInfos[i];
-            plane_id = drmModeInfo.plane_id;
+            int plane_id = drmModeInfo.plane_id;
             if (plane_id > 0) {
                 dst_w = drmModeInfo.crtc->width;
                 dst_h = drmModeInfo.crtc->height;
