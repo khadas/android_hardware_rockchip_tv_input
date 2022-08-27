@@ -251,6 +251,7 @@ int HinDevImpl::init(int id,int initType) {
     mState = STOPED;
     mANativeWindow = NULL;
     mWorkThread = NULL;
+    mPqBufferThread = NULL;
     mV4L2DataFormatConvert = false;
     // mPreviewThreadRunning = false;
     // mPreviewBuffThread = NULL;
@@ -510,9 +511,22 @@ int HinDevImpl::start()
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     property_get(TV_INPUT_DISPLAY_RATIO, prop_value, "0");
     mDisplayRatio = (int)atoi(prop_value);
+    property_set(TV_INPUT_PQ_MODE, "0");
+    property_set(TV_INPUT_HDMIIN, "1");
 
     mWorkThread = new WorkThread(this);
     mState = START;
+    mPqBufferThread = new PqBufferThread(this);
+    /*property_get(TV_INPUT_PQ_STATUS, prop_value, "0");
+    int pqStatus = (int)atoi(prop_value);
+    mPqInitFinish = false;
+    if ((pqStatus & PQ_NORMAL) == PQ_NORMAL) {
+        map<string, string> pqData;
+        pqData.clear();
+        pqData.insert({"mode", prop_value});
+        doPQCmd(pqData);
+    }*/
+
     mOpen = true;
     ALOGD("%s %d ret:%d", __FUNCTION__, __LINE__, ret);
     return NO_ERROR;
@@ -524,6 +538,12 @@ int HinDevImpl::stop()
     ALOGD("%s %d", __FUNCTION__, __LINE__);
     int ret;
     mState = STOPED;
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    property_get(TV_INPUT_PQ_ENABLE, prop_value, "0");
+    if ((int)atoi(prop_value) == 1) {
+        property_set(TV_INPUT_PQ_MODE, "1");
+    }
+    property_set(TV_INPUT_HDMIIN, "0");
     Mutex::Autolock autoLock(mBufferLock);
 
     if(gMppEnCodeServer != nullptr) {
@@ -534,6 +554,16 @@ int HinDevImpl::stop()
         mWorkThread->requestExit();
         mWorkThread.clear();
         mWorkThread = NULL;
+    }
+    if(mPqBufferThread != NULL){
+        mPqBufferThread->requestExit();
+        mPqBufferThread.clear();
+        mPqBufferThread = NULL;
+    }
+
+    if (mRkpq!=nullptr) {
+        delete mRkpq;
+        mRkpq = nullptr;
     }
 
     if (mFrameType & TYPF_SIDEBAND_WINDOW) {
@@ -654,6 +684,22 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
         mFrameFps = 60;
     } else {
         DEBUG_PRINT(3, "[%s %d] RK_HDMIRX_CMD_GET_FPS %d", __FUNCTION__, __LINE__, mFrameFps);
+    }
+
+    err = ioctl(mHinDevHandle, RK_HDMIRX_CMD_GET_COLOR_RANGE, &mFrameColorRange);
+    if (err < 0) {
+        DEBUG_PRINT(3, "[%s %d] failed, RK_HDMIRX_CMD_GET_COLOR_RANGE %d, %s", __FUNCTION__, __LINE__, err, strerror(err));
+        mFrameColorRange = HDMIRX_DEFAULT_RANGE;
+    } else {
+        DEBUG_PRINT(3, "[%s %d] RK_HDMIRX_CMD_GET_COLOR_RANGE %d", __FUNCTION__, __LINE__, mFrameColorRange);
+    }
+
+    err = ioctl(mHinDevHandle, RK_HDMIRX_CMD_GET_COLOR_SPACE, &mFrameColorSpace);
+    if (err < 0) {
+        DEBUG_PRINT(3, "[%s %d] failed, RK_HDMIRX_CMD_GET_COLOR_SPACE %d, %s", __FUNCTION__, __LINE__, err, strerror(err));
+        mFrameColorSpace = HDMIRX_XVYCC709;
+    } else {
+        DEBUG_PRINT(3, "[%s %d] RK_HDMIRX_CMD_GET_COLOR_SPACE %d", __FUNCTION__, __LINE__, mFrameColorSpace);
     }
 
     if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
@@ -940,6 +986,16 @@ int HinDevImpl::release_buffer()
         mRecordHandle.clear();
     }
 
+    if (mPqBufferHandle.empty()) {
+        for (int i=0; i<mPqBufferHandle.size(); i++) {
+            //mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
+            mPqBufferHandle[i].srcHandle = NULL;
+            mSidebandWindow->freeBuffer(&mPqBufferHandle[i].outHandle, 1);
+            mPqBufferHandle[i].outHandle = NULL;
+        }
+        mPqBufferHandle.clear();
+    }
+
     if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
         if (!mPreviewRawHandle.empty()) {
             for (int i=0; i<mPreviewRawHandle.size(); i++) {
@@ -1184,10 +1240,136 @@ void HinDevImpl::doRecordCmd(const map<string, string> data) {
     }
 }
 
+void HinDevImpl::doPQCmd(const map<string, string> data) {
+    if (mState != START) {
+        mPqMode = PQ_OFF;
+        return;
+    }
+    bool stopPq = false;
+    int tempPqMode = PQ_OFF;
+    for (auto it : data) {
+        ALOGD("%s %s %s", __FUNCTION__, it.first.c_str(), it.second.c_str());
+        if (it.first.compare("status") == 0) {
+            if (it.second.compare("0") == 0) {
+                stopPq = true;
+            } else if (it.second.compare("1") == 0 && mPqMode == PQ_OFF) {
+                stopPq = false;
+            }
+        } else if (it.first.compare("mode") == 0) {
+            tempPqMode = (int)atoi(it.second.c_str());
+        }
+    }
+
+    if (mOutRange%HDMIRX_FULL_RANGE != mLastOutRange%HDMIRX_FULL_RANGE//out: default means full
+            && mPixelFormat == V4L2_PIX_FMT_BGR24) {
+        ALOGD("%s need redinit mLastOutRange=%d, newOutRange=%d", __FUNCTION__, mLastOutRange, mOutRange);
+        if (mRkpq!=nullptr) {
+           delete mRkpq;
+           mRkpq = nullptr;
+        }
+        mPqMode = PQ_OFF;
+    }
+    mLastOutRange = mOutRange;
+
+    if (stopPq || tempPqMode == PQ_OFF) {
+        if (mRkpq!=nullptr) {
+           delete mRkpq;
+           mRkpq = nullptr;
+        }
+    } else if(mPqMode == PQ_OFF) {
+        if (mPqBufferHandle.empty()) {
+            mPqBufferHandle.resize(SIDEBAND_PQ_BUFF_CNT);
+            for (int i=0; i<mPqBufferHandle.size(); i++) {
+                //mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].srcHandle, -1, -1, -1);
+                mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].outHandle, mFrameWidth, mFrameHeight,
+                    HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+            }
+            ALOGD("%s all pqbufferhandle", __FUNCTION__);
+        }
+        for (int i=0; i<mPqBufferHandle.size(); i++) {
+            mPqBufferHandle[i].isFilled = false;
+        }
+        mPqBuffIndex = 0;
+        mPqBuffOutIndex = 0;
+        if (mRkpq == nullptr) {
+            mRkpq = new rkpq();
+            int fmt = getPqFmt(mPixelFormat);
+            uint32_t width_stride[2] = {0 , 0};
+            if (mFrameWidth != _ALIGN(mFrameWidth, 64)) {
+                if (fmt == RKPQ_IMG_FMT_BG24) {
+                    width_stride[0] = _ALIGN(mFrameWidth * 3, 64);
+                } else if (fmt == RKPQ_IMG_FMT_NV16) {
+                    width_stride[0] = _ALIGN(mFrameWidth, 64);
+                } else if (fmt == RKPQ_IMG_FMT_NV24){
+                    width_stride[0] = _ALIGN(mFrameWidth, 64);
+                    width_stride[1] = _ALIGN(mFrameWidth*2, 64);
+                }
+            }
+            int src_color_space = 0;
+            if (fmt == RKPQ_IMG_FMT_BG24) {
+                if (mFrameColorRange == HDMIRX_FULL_RANGE) {
+                    src_color_space = RKPQ_CLR_SPC_RGB_FULL;
+                } else {
+                    src_color_space = RKPQ_CLR_SPC_RGB_LIMITED;
+                }
+            } else {
+                bool force_yuv_limit = true;
+                if (mFrameColorRange == HDMIRX_FULL_RANGE && !force_yuv_limit) {
+                    if (mFrameColorSpace == HDMIRX_XVYCC601
+                            || mFrameColorSpace ==HDMIRX_SYCC601) {
+                        src_color_space = RKPQ_CLR_SPC_YUV_601_FULL;
+                    } else {
+                        src_color_space = RKPQ_CLR_SPC_YUV_709_FULL;
+                    }
+                } else {
+                    if (mFrameColorSpace == HDMIRX_XVYCC601
+                            || mFrameColorSpace ==HDMIRX_SYCC601) {
+                        src_color_space = RKPQ_CLR_SPC_YUV_601_LIMITED;
+                    } else {
+                        src_color_space = RKPQ_CLR_SPC_YUV_709_LIMITED;
+                    }
+                }
+            }
+            int dst_color_space = RKPQ_CLR_SPC_YUV_601_FULL;
+            if ((tempPqMode & PQ_LF_RANGE) == PQ_LF_RANGE) {
+                char prop_value[PROPERTY_VALUE_MAX] = {0};
+                property_get(TV_INPUT_PQ_RANGE, prop_value, "0");
+                if ((int)atoi(prop_value) == HDMIRX_LIMIT_RANGE) {
+                    dst_color_space = RKPQ_CLR_SPC_YUV_601_LIMITED;
+                }
+            }
+            int flag = RKPQ_FLAG_CALC_MEAN_LUMA;
+            ALOGD("rkpq init %dx%d stride=%d-%d, fmt=%d, space=%d-%d, flag=%d",
+                mFrameWidth, mFrameHeight, width_stride[0], width_stride[1], fmt, src_color_space, dst_color_space, flag);
+            mRkpq->init(mFrameWidth, mFrameHeight, width_stride, 64, fmt, src_color_space, dst_color_space, flag);
+            ALOGD("rkpq init finish");
+        }
+    }
+    mPqMode = tempPqMode;
+    ALOGD("%s mStartPQ pqMode=%d", __FUNCTION__, mPqMode);
+}
+
+int HinDevImpl::getPqFmt(int V4L2Fmt) {
+    if (V4L2_PIX_FMT_BGR24 == V4L2Fmt) {
+        return RKPQ_IMG_FMT_BG24;
+    } else if (V4L2_PIX_FMT_NV12 == V4L2Fmt) {
+        return RKPQ_IMG_FMT_NV12;
+    } else if (V4L2_PIX_FMT_NV16 == V4L2Fmt) {
+        return RKPQ_IMG_FMT_NV16;
+    } else if (V4L2_PIX_FMT_NV24 == V4L2Fmt) {
+        return RKPQ_IMG_FMT_NV24;
+    }
+    return RKPQ_IMG_FMT_NV12;
+}
+
 int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::string, std::string> data) {
     ALOGD("%s %s ", __FUNCTION__, action.c_str());
     if (action.compare("record") == 0) {
         doRecordCmd(data);
+        return 1;
+    } else if (action.compare("pq") == 0){
+        Mutex::Autolock autoLock(mBufferLock);
+        doPQCmd(data);
         return 1;
     } else if (action.compare("hdmiinout") == 0) {
         Mutex::Autolock autoLock(mBufferLock);
@@ -1309,8 +1491,25 @@ int HinDevImpl::workThread()
                 return ret;
             }
 
-            mSidebandWindow->show(
-                mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
+            if (mPqMode != PQ_OFF) {
+                if (mPqBufferHandle[mPqBuffIndex].isFilled) {
+                    DEBUG_PRINT(3, "skip pq buffer");
+                } else {
+                    mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex];
+                    mPqBufferHandle[mPqBuffIndex].isFilled = true;
+                    mPqBuffIndex++;
+                    if (mPqBuffIndex == SIDEBAND_PQ_BUFF_CNT) {
+                        mPqBuffIndex = 0;
+                    }
+                }
+            }
+
+            if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)
+                    || (mPqMode & PQ_NORMAL) == PQ_NORMAL) {
+            } else {
+                mSidebandWindow->show(
+                    mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
+            }
 
 //encode:sendFrame
             if (gMppEnCodeServer != nullptr && gMppEnCodeServer->mThreadEnabled.load()) {
@@ -1380,6 +1579,67 @@ int HinDevImpl::workThread()
         debugShowFPS();
         mHinNodeInfo->currBufferHandleIndex++;
     }
+    return NO_ERROR;
+}
+
+int HinDevImpl::pqBufferThread() {
+    Mutex::Autolock autoLock(mBufferLock);
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    int pqMode = PQ_OFF;
+    int value = 0;
+    property_get(TV_INPUT_PQ_ENABLE, prop_value, "0");
+    value = (int)atoi(prop_value);
+    if (value != 0) {
+        pqMode |= PQ_NORMAL;
+    }
+    property_get(TV_INPUT_PQ_LUMA, prop_value, "0");
+    value = (int)atoi(prop_value);
+    if (value != 0) {
+        pqMode |= PQ_CACL_LUMA;
+    }
+    property_get(TV_INPUT_PQ_RANGE, prop_value, "0");
+    mOutRange = (int)atoi(prop_value);
+    if (mOutRange != 0) {
+        pqMode |= PQ_LF_RANGE;
+    }
+    if (mPqMode != pqMode || mOutRange != mLastOutRange) {
+        map<string, string> pqData;
+        pqData.clear();
+        pqData.insert({"mode", to_string(pqMode)});
+        doPQCmd(pqData);
+    }
+
+    if (mState == START) {
+        if (mPqMode != PQ_OFF && !mPqBufferHandle.empty() && mPqBufferHandle[mPqBuffOutIndex].isFilled) {
+            bool showPqFrame = false;
+            bool enableLuma = (mPqMode & PQ_CACL_LUMA) == PQ_CACL_LUMA;
+            if ((mPqMode & PQ_NORMAL) == PQ_NORMAL) {
+                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                showPqFrame = true;
+            } else if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)) {
+                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
+                showPqFrame = true;
+            } else if (enableLuma) {
+                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], PQ_CACL_LUMA);
+            }
+            if (mState != START) {
+                return NO_ERROR;
+            }
+            if (showPqFrame) {
+                mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio);
+            }
+            mPqBufferHandle[mPqBuffOutIndex].isFilled = false;
+            mPqBuffOutIndex++;
+            if (mPqBuffOutIndex == SIDEBAND_PQ_BUFF_CNT) {
+                mPqBuffOutIndex = 0;
+            }
+        }
+    }
+    usleep(500);
+
     return NO_ERROR;
 }
 

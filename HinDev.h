@@ -28,6 +28,8 @@
 #include "sideband/RTSidebandWindow.h"
 #include "common/RgaCropScale.h"
 #include "common/HandleImporter.h"
+#include "common/rk_hdmirx_config.h"
+#include <rkpq.h>
 #include "MppEncodeServer.h"
 #include "RKMppEncApi.h"
 
@@ -38,9 +40,6 @@
 
 using namespace android;
 using ::android::tvinput::RgaCropScale;
-
-#define RK_HDMIRX_CMD_GET_FPS \
-        _IOR('V', BASE_VIDIOC_PRIVATE + 0, int)
 
 typedef struct source_buffer_info {
     buffer_handle_t source_buffer_handle_t;
@@ -78,6 +77,12 @@ typedef struct tv_record_buffer_info {
     int horStride;
     bool isCoding;
 } tv_record_buffer_info_t;
+
+typedef struct tv_pq_buffer_info {
+    buffer_handle_t srcHandle = NULL;
+    buffer_handle_t outHandle;
+    bool isFilled;
+} tv_pq_buffer_info_t;
 
 enum State {
     START,
@@ -159,11 +164,14 @@ class HinDevImpl {
     MppEncodeServer *gMppEnCodeServer=nullptr;
     private:
         int workThread();
+        int pqBufferThread();
+        int getPqFmt(int V4L2Fmt);
         // int previewBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
         void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle);
         void doRecordCmd(const map<string, string> data);
+        void doPQCmd(const map<string, string> data);
         int getRecordBufferFd(int previewHandlerIndex);
         int init_encodeserver(MppEncodeServer::MetaInfo* info);
     void deinit_encodeserver();
@@ -185,6 +193,21 @@ class HinDevImpl {
                     return true;
                 }
         };
+        class PqBufferThread : public Thread {
+            HinDevImpl* mSource;
+            public:
+                PqBufferThread(HinDevImpl* source) :
+                    Thread(false), mSource(source) { }
+                virtual void onFirstRef() {
+                    run("hdmi_input_source pq buffer thread", PRIORITY_URGENT_DISPLAY);
+                }
+                virtual bool threadLoop() {
+                    mSource->pqBufferThread();
+                    // loop until we need to quit
+                    return true;
+                }
+        };
+
         // class PreviewBuffThread : public Thread {
         //     HinDevImpl* mSource;
         //     public:
@@ -207,6 +230,8 @@ class HinDevImpl {
         int mFrameWidth;
         int mFrameHeight;
         int mFrameFps;
+        int mFrameColorRange = HDMIRX_DEFAULT_RANGE;
+        int mFrameColorSpace = HDMIRX_XVYCC709;
         int mBufferSize;
         bool mIsHdmiIn;
         unsigned int flex_ratio;
@@ -222,6 +247,7 @@ class HinDevImpl {
         int mNativeWindowPixelFormat;
         sp<ANativeWindow> mANativeWindow;
         sp<WorkThread>   mWorkThread;
+        sp<PqBufferThread> mPqBufferThread;
         // sp<PreviewBuffThread>   mPreviewBuffThread;
         mutable Mutex mLock;
         Mutex mBufferLock;
@@ -246,5 +272,12 @@ class HinDevImpl {
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         int mRecordCodingBuffIndex = 0;
         int mDisplayRatio = FULL_SCREEN;
+        int mPqMode;
+        int mOutRange = HDMIRX_DEFAULT_RANGE;
+        int mLastOutRange = mOutRange;
+        std::vector<tv_pq_buffer_info_t> mPqBufferHandle;
+        int mPqBuffIndex = 0;
+        int mPqBuffOutIndex = 0;
+        rkpq *mRkpq=nullptr;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };
