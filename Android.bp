@@ -19,6 +19,9 @@ cc_library_shared {
 	"libgralloc_hdmi_in_headers",
     ],
     shared_libs: [
+        "librkswpq",
+        "libpq",
+        "libbaseparameter",
         "libcutils",
         "liblog",
         "libnativewindow",
@@ -62,6 +65,8 @@ cc_library_shared {
     "frameworks/native/include/gui",
         "hardware/rockchip/libhardware_rockchip/include/",
         "external/libdrm/include/drm",
+        "hardware/rockchip/libbaseparameter",
+        "hardware/rockchip/libpq/include/"
     ],
     local_include_dirs: [
         "common/",

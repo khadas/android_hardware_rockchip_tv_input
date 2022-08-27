@@ -37,8 +37,9 @@
 #define TVHAL_V4L2_BUF_MEMORY_TYPE V4L2_MEMORY_DMABUF //V4L2_MEMORY_MMAP
 
 #define SIDEBAND_RECORD_BUFF_CNT 4
-#define SIDEBAND_WINDOW_BUFF_CNT 3 //enc/nv24trans need >= 3
+#define SIDEBAND_WINDOW_BUFF_CNT 3 //pq/enc/nv24trans need >= 3
 #define APP_PREVIEW_BUFF_CNT SIDEBAND_WINDOW_BUFF_CNT
+#define SIDEBAND_PQ_BUFF_CNT SIDEBAND_WINDOW_BUFF_CNT
 #define PLANES_NUM 1
 
 #define DEFAULT_V4L2_STREAM_WIDTH 1920
@@ -65,6 +66,8 @@ enum DisplayRatio{
     SCREEN_4_3  = 0x2,
 };
 
+#define PQ_OFF           0
+
 static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
     GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN |
     RK_GRALLOC_USAGE_WITHIN_4G | RK_GRALLOC_USAGE_PHY_CONTIG_BUFFER
@@ -76,6 +79,11 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
 #define TV_INPUT_HAS_ENCODE "vendor.tvinput.encode"
 #define TV_INPUT_DISPLAY_RATIO "vendor.tvinput.displayratio"
+#define TV_INPUT_PQ_ENABLE "persist.vendor.rkpq.enable"
+#define TV_INPUT_PQ_MODE "persist.vendor.pq.mode"
+#define TV_INPUT_PQ_RANGE "persist.vendor.rkpq.range"
+#define TV_INPUT_PQ_LUMA "persist.vendor.rkpq.luma"
+#define TV_INPUT_HDMIIN "vendor.rk.hdmiin"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \
