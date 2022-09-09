@@ -405,13 +405,18 @@ bool DrmVopRender::FindSidebandPlane(int device) {
         ALOGE("%s output->plane_res is NULL", __FUNCTION__);
         return false;
     }
+    int plandIdCount = 0;
     if (!output->mDrmModeInfos.empty()) {
         for (int i=0; i<output->mDrmModeInfos.size(); i++) {
             output->mDrmModeInfos[i].plane_id = -1;
+            plandIdCount++;
         }
     }
 
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
+        if (plandIdCount == 0) {
+            break;
+        }
         plane = drmModeGetPlane(mDrmFd, output->plane_res->planes[i]);
         props = drmModeObjectGetProperties(mDrmFd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
         if (!props) {
@@ -422,7 +427,7 @@ bool DrmVopRender::FindSidebandPlane(int device) {
         for (uint32_t j = 0; j < props->count_props; j++) {
             prop = drmModeGetProperty(mDrmFd, props->props[j]);
             if (!strcmp(prop->name, "ASYNC_COMMIT")) {
-                ALOGV("find ASYNC_COMMIT plane id=%d value=%lld", plane->plane_id, (long long)props->prop_values[j]);
+                ALOGV("find ASYNC_COMMIT plane id=%d value=%lld====%d-%d", plane->plane_id, (long long)props->prop_values[j], i, j);
                 if (props->prop_values[j] != 0) {
                     plane_id = plane->plane_id;
                 }
@@ -438,6 +443,7 @@ bool DrmVopRender::FindSidebandPlane(int device) {
                                 output->mDrmModeInfos[k].plane_id = plane_id;
                                 ALOGV("set plan_id=%d crtc_id=%d to pos=%d", plane_id, output->mDrmModeInfos[k].crtc->crtc_id, k);
                                 find_plan_id = plane_id;
+                                plandIdCount--;
                                 break;
                             }
                         }
