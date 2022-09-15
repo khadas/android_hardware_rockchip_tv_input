@@ -16,6 +16,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include "common/rk_hdmirx_config.h"
 
 using namespace std;
 using android::status_t;
