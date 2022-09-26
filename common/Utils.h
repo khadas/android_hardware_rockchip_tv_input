@@ -84,6 +84,7 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_PQ_RANGE "persist.vendor.rkpq.range"
 #define TV_INPUT_PQ_LUMA "persist.vendor.rkpq.luma"
 #define TV_INPUT_HDMIIN "vendor.rk.hdmiin"
+#define TV_INPUT_RESOLUTION_MAIN "persist.vendor.resolution.main"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \

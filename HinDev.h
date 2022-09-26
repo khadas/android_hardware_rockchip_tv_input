@@ -156,6 +156,7 @@ class HinDevImpl {
         buffer_handle_t getSindebandBufferHandle();
         int deal_priv_message(const string action, const map<string, string> data);
         int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
+        bool check_zme(int src_width, int src_height, int* dst_width, int* dst_height);
 
         const tv_input_callback_ops_t* mTvInputCB;
 
@@ -227,8 +228,10 @@ class HinDevImpl {
         //KeyedVector<long *, long> mBufs;
         //KeyedVector<long *, long> mTemp_Bufs;
         int mBufferCount;
-        int mFrameWidth;
-        int mFrameHeight;
+        int mSrcFrameWidth;
+        int mSrcFrameHeight;
+        int mDstFrameWidth;
+        int mDstFrameHeight;
         int mFrameFps;
         int mFrameColorRange = HDMIRX_DEFAULT_RANGE;
         int mFrameColorSpace = HDMIRX_XVYCC709;
@@ -267,7 +270,7 @@ class HinDevImpl {
         void *mUser;
         bool mV4L2DataFormatConvert;
         int mPreviewBuffIndex = 0;
-	    bool mFirstRequestCapture;
+        bool mFirstRequestCapture;
         int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         int mRecordCodingBuffIndex = 0;
@@ -279,5 +282,6 @@ class HinDevImpl {
         int mPqBuffIndex = 0;
         int mPqBuffOutIndex = 0;
         rkpq *mRkpq=nullptr;
+        bool mUseZme;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

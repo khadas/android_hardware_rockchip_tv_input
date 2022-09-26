@@ -289,8 +289,14 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             requestInfo.streamId = stream->stream_id;
 
             if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))
-		return -EINVAL;
-            s_TvInputPriv->mDev->set_crop(0, 0, width, height);
+                return -EINVAL;
+            int dst_width = 0, dst_height = 0;
+            bool use_zme = s_TvInputPriv->mDev->check_zme(width, height, &dst_width, &dst_height);
+            if(use_zme) {
+                s_TvInputPriv->mDev->set_crop(0, 0, dst_width, dst_height);
+            } else {
+                s_TvInputPriv->mDev->set_crop(0, 0, width, height);
+            }
             if (stream->type & TYPF_SIDEBAND_WINDOW) {
                 s_TvInputPriv->mStreamType = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
                 stream->sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());
