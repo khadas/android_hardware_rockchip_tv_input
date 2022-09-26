@@ -21,6 +21,7 @@ cc_library_shared {
     shared_libs: [
         "librkswpq",
         "libpq",
+        "libiep",
         "libbaseparameter",
         "libcutils",
         "liblog",
@@ -66,7 +67,10 @@ cc_library_shared {
         "hardware/rockchip/libhardware_rockchip/include/",
         "external/libdrm/include/drm",
         "hardware/rockchip/libbaseparameter",
-        "hardware/rockchip/libpq/include/"
+        "hardware/rockchip/libpq/include/",
+        "hardware/rockchip/libpq/include/",
+        "hardware/rockchip/libiep/include",
+        "hardware/rockchip/librga/im2d_api"
     ],
     local_include_dirs: [
         "common/",
