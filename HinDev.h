@@ -30,6 +30,7 @@
 #include "common/HandleImporter.h"
 #include "common/rk_hdmirx_config.h"
 #include <rkpq.h>
+#include "rkiep.h"
 #include "MppEncodeServer.h"
 #include "RKMppEncApi.h"
 
@@ -157,6 +158,8 @@ class HinDevImpl {
         int deal_priv_message(const string action, const map<string, string> data);
         int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
         bool check_zme(int src_width, int src_height, int* dst_width, int* dst_height);
+        int check_interlaced();
+        void set_interlaced(int interlaced);
 
         const tv_input_callback_ops_t* mTvInputCB;
 
@@ -166,6 +169,7 @@ class HinDevImpl {
     private:
         int workThread();
         int pqBufferThread();
+        int iepBufferThread();
         int getPqFmt(int V4L2Fmt);
         // int previewBuffThread();
         int makeHwcSidebandHandle();
@@ -204,6 +208,21 @@ class HinDevImpl {
                 }
                 virtual bool threadLoop() {
                     mSource->pqBufferThread();
+                    // loop until we need to quit
+                    return true;
+                }
+        };
+
+        class IepBufferThread : public Thread {
+            HinDevImpl* mSource;
+            public:
+                IepBufferThread(HinDevImpl* source) :
+                    Thread(false), mSource(source) { }
+                virtual void onFirstRef() {
+                    run("hdmi_input_source iep buffer thread", PRIORITY_URGENT_DISPLAY);
+                }
+                virtual bool threadLoop() {
+                    mSource->iepBufferThread();
                     // loop until we need to quit
                     return true;
                 }
@@ -251,6 +270,7 @@ class HinDevImpl {
         sp<ANativeWindow> mANativeWindow;
         sp<WorkThread>   mWorkThread;
         sp<PqBufferThread> mPqBufferThread;
+        sp<IepBufferThread> mIepBufferThread;
         // sp<PreviewBuffThread>   mPreviewBuffThread;
         mutable Mutex mLock;
         mutable Mutex mBufferLock;
@@ -273,6 +293,7 @@ class HinDevImpl {
         bool mFirstRequestCapture;
         int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
+        std::vector<tv_pq_buffer_info_t> mIepBufferHandle;
         int mRecordCodingBuffIndex = 0;
         int mDisplayRatio = FULL_SCREEN;
         int mPqMode;
@@ -283,5 +304,9 @@ class HinDevImpl {
         int mPqBuffOutIndex = 0;
         rkpq *mRkpq=nullptr;
         bool mUseZme;
+        rkiep *mRkiep=nullptr;
+        int mIepBuffIndex = 0;
+        int mIepBuffOutIndex = 0;
+        bool mUseIep = false;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

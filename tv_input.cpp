@@ -67,6 +67,7 @@ static tv_input_request_info_t requestInfo;
 static int s_HinDevStreamWidth = 1280;
 static int s_HinDevStreamHeight = 720;
 static int s_HinDevStreamFormat = DEFAULT_TVHAL_STREAM_FORMAT;
+static int s_HinDevStreamInterlaced = 0;
 //static unsigned int gHinDevOpened = 0;
 //static Mutex gHinDevOpenLock;
 //static HinDevImpl* gHinHals[MAX_HIN_DEVICE_SUPPORTED];
@@ -119,6 +120,7 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
+	     s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
              event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
 	     break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
@@ -178,6 +180,7 @@ static int hin_dev_open(int deviceId, int type)
                 return -1;
             }
             ALOGD("hinDevImpl->findDevice %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
+            s_TvInputPriv->mDev->set_interlaced(s_HinDevStreamInterlaced);
             s_TvInputPriv->isOpened = true;
         }
     }

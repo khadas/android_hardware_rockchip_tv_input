@@ -28,6 +28,7 @@
 #include <ui/GraphicBuffer.h>
 #include <linux/videodev2.h>
 #include <RockchipRga.h>
+#include "im2d.hpp"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -52,7 +53,6 @@ constexpr char kPrefix[] = "video";
 constexpr int kPrefixLen = sizeof(kPrefix) - 1;
 //constexpr int kDevicePrefixLen = sizeof(kDevicePath) + kPrefixLen + 1;
 constexpr char kHdmiNodeName[] = "rk_hdmirx";
-
 
 nsecs_t now = 0;
 nsecs_t mLastTime = 0;
@@ -253,6 +253,7 @@ int HinDevImpl::init(int id,int initType) {
     mANativeWindow = NULL;
     mWorkThread = NULL;
     mPqBufferThread = NULL;
+    mIepBufferThread = NULL;
     mV4L2DataFormatConvert = false;
     // mPreviewThreadRunning = false;
     // mPreviewBuffThread = NULL;
@@ -527,6 +528,7 @@ int HinDevImpl::start()
     mWorkThread = new WorkThread(this);
     mState = START;
     mPqBufferThread = new PqBufferThread(this);
+    mIepBufferThread = new IepBufferThread(this);
     /*property_get(TV_INPUT_PQ_STATUS, prop_value, "0");
     int pqStatus = (int)atoi(prop_value);
     mPqInitFinish = false;
@@ -574,6 +576,16 @@ int HinDevImpl::stop()
     if (mRkpq!=nullptr) {
         delete mRkpq;
         mRkpq = nullptr;
+    }
+
+    if (mIepBufferThread != NULL) {
+        mIepBufferThread->requestExit();
+         mIepBufferThread.clear();
+         mIepBufferThread = NULL;
+    }
+    if (mRkiep!=nullptr) {
+         delete mRkiep;
+         mRkiep = nullptr;
     }
 
     if (mFrameType & TYPF_SIDEBAND_WINDOW) {
@@ -1006,6 +1018,17 @@ int HinDevImpl::release_buffer()
         mPqBufferHandle.clear();
     }
 
+    if (mIepBufferHandle.empty()) {
+        for (int i=0; i<mPqBufferHandle.size(); i++) {
+            mSidebandWindow->freeBuffer(&mIepBufferHandle[i].srcHandle, 1);
+            mIepBufferHandle[i].srcHandle = NULL;
+            mSidebandWindow->freeBuffer(&mIepBufferHandle[i].outHandle, 1);
+            mIepBufferHandle[i].outHandle = NULL;
+        }
+        mIepBufferHandle.clear();
+    }
+
+
     if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
         if (!mPreviewRawHandle.empty()) {
             for (int i=0; i<mPreviewRawHandle.size(); i++) {
@@ -1277,6 +1300,10 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
            delete mRkpq;
            mRkpq = nullptr;
         }
+        if (mRkiep!=nullptr) {
+            delete mRkiep;
+            mRkiep = nullptr;
+        }
         mPqMode = PQ_OFF;
     }
     mLastOutRange = mOutRange;
@@ -1286,6 +1313,12 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
            delete mRkpq;
            mRkpq = nullptr;
         }
+
+        if (mRkiep!=nullptr) {
+           delete mRkiep;
+           mRkiep = nullptr;
+        }
+
     } else if(mPqMode == PQ_OFF) {
         if (mPqBufferHandle.empty()) {
             mPqBufferHandle.resize(SIDEBAND_PQ_BUFF_CNT);
@@ -1299,6 +1332,22 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
         for (int i=0; i<mPqBufferHandle.size(); i++) {
             mPqBufferHandle[i].isFilled = false;
         }
+
+        if (mIepBufferHandle.empty()) {
+            mIepBufferHandle.resize(SIDEBAND_IEP_BUFF_CNT);
+            for (int i=0; i<mIepBufferHandle.size(); i++) {
+                mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].srcHandle, mDstFrameWidth, mDstFrameHeight,
+                    HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
+                    HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+            }
+        }
+        for (int i=0; i<mIepBufferHandle.size(); i++) {
+            mIepBufferHandle[i].isFilled = false;
+        }
+        mIepBuffIndex = 0;
+        mIepBuffOutIndex = 0;
+
         mPqBuffIndex = 0;
         mPqBuffOutIndex = 0;
         if (mRkpq == nullptr) {
@@ -1353,6 +1402,12 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                 mSrcFrameWidth, mSrcFrameHeight, width_stride[0], width_stride[1], fmt, src_color_space, dst_color_space, flag);
             mRkpq->init(mSrcFrameWidth, mSrcFrameHeight, width_stride, mDstFrameWidth, mDstFrameHeight, 64, fmt, src_color_space, dst_color_space, flag);
             ALOGD("rkpq init finish");
+            if (mUseIep) {
+                if (mRkiep == nullptr) {
+                    mRkiep = new rkiep();
+                }
+                mRkiep->iep2_init(mDstFrameWidth, mDstFrameHeight, fmt);
+            }
         }
     }
     mPqMode = tempPqMode;
@@ -1624,9 +1679,28 @@ int HinDevImpl::pqBufferThread() {
             bool showPqFrame = false;
             bool enableLuma = (mPqMode & PQ_CACL_LUMA) == PQ_CACL_LUMA;
             if ((mPqMode & PQ_NORMAL) == PQ_NORMAL) {
-                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
-                showPqFrame = true;
+                if (mUseIep) {
+                    if (!mIepBufferHandle.empty()) {
+                        if (mIepBufferHandle[mIepBuffIndex].isFilled) {
+                             mIepBuffIndex++;
+                             if (mIepBuffIndex == SIDEBAND_IEP_BUFF_CNT) {
+                                mIepBuffIndex = 0;
+                             }
+                         } else {
+                             mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                             mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
+                             mIepBufferHandle[mIepBuffIndex].isFilled = true;
+                             mIepBuffIndex++;
+                             if (mIepBuffIndex == SIDEBAND_IEP_BUFF_CNT) {
+                                 mIepBuffIndex = 0;
+                             }
+                         }
+                    }
+                } else {
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                    showPqFrame = true;
+                }
             } else if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)) {
                 mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
                     mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
@@ -1680,12 +1754,65 @@ bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* d
     }
     int pq_enable = property_get_int32(TV_INPUT_PQ_ENABLE, 0);
     if(src_width == 1920 && src_height == 1080 &&
-        width == 3840 && height == 2160 && pq_enable) {
+        width == 3840 && height == 2160 && pq_enable && !mUseIep) {
         *dst_width = width;
         *dst_height = height;
         return true;
     } else {
         return false;
+    }
+}
+
+int HinDevImpl::iepBufferThread() {
+    //Mutex::Autolock autoLock(mBufferLock); will happend rob wait if mBufferLock
+    if (mState == START) {
+        /*if (!mIepBufferHandle.empty()){
+            ALOGD("%s  %d %d %d %d ", __FUNCTION__, mIepBufferHandle[0].isFilled, mIepBufferHandle[1].isFilled, mIepBufferHandle[2].isFilled, mIepBufferHandle[3].isFilled);
+        }*/
+        if (mPqMode != PQ_OFF && !mIepBufferHandle.empty()) {
+            int cur = mIepBuffOutIndex;
+            int last1 = (cur + SIDEBAND_IEP_BUFF_CNT -1)%SIDEBAND_IEP_BUFF_CNT;
+            int last2 = (cur + SIDEBAND_IEP_BUFF_CNT -2)%SIDEBAND_IEP_BUFF_CNT;
+            //ALOGD("check iep %s  %d %d %d----%d %d %d", __FUNCTION__, last2, last1, cur, mIepBufferHandle[last2].isFilled, mIepBufferHandle[last1].isFilled, mIepBufferHandle[cur].isFilled);
+            if (mIepBufferHandle[cur].isFilled && mIepBufferHandle[last1].isFilled && mIepBufferHandle[last2].isFilled) {
+                int curIepOutIndex = mIepBuffOutIndex;
+                int nextIepOutIndex = (mIepBuffOutIndex + SIDEBAND_IEP_BUFF_CNT + 1)%SIDEBAND_IEP_BUFF_CNT;
+                mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
+                    mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
+                if (mState != START) {
+                    return NO_ERROR;
+                }
+                mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio);
+                mIepBufferHandle[curIepOutIndex].isFilled = false;
+                mIepBuffOutIndex ++;
+                if (mIepBuffOutIndex == SIDEBAND_IEP_BUFF_CNT) {
+                    mIepBuffOutIndex = 0;
+                }
+            }
+        }
+    }
+    usleep(500);
+
+    return NO_ERROR;
+}
+
+int HinDevImpl::check_interlaced() {
+    struct v4l2_dv_timings dv_timings;
+    memset(&dv_timings, 0 ,sizeof(struct v4l2_dv_timings));
+    int err = ioctl(mHinDevHandle, VIDIOC_SUBDEV_QUERY_DV_TIMINGS, &dv_timings);
+    if (err < 0) {
+        ALOGD("Set VIDIOC_SUBDEV_QUERY_DV_TIMINGS failed ,%d(%s)", errno, strerror(errno));
+        return 0;
+    } else {
+        return dv_timings.bt.interlaced;
+    }
+}
+
+void HinDevImpl::set_interlaced(int interlaced) {
+    if (interlaced == 1) {
+        mUseIep = true;
+    } else {
+        mUseIep = false;
     }
 }
 
