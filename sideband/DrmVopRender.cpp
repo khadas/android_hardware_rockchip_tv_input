@@ -139,9 +139,10 @@ bool DrmVopRender::detect(int device)
     for (int i=0; i< MAX_DISPLAY_NUM; i++) {
         sprintf(prop_name, "vendor.hwc.device.display-%d", i);
         property_get(prop_name, prop_value, "0");
-        if (strcmp(prop_value, "0") == 0) {
+        ALOGE("%s=%s", prop_name, prop_value);
+        /*if (strcmp(prop_value, "0") == 0) {
             break;
-        }
+        }*/
         bool connected = strstr(prop_value, ":connected");
         if (mDisplayInfos.empty() || i > mDisplayInfos.size()-1) {
             DisplayInfo info;

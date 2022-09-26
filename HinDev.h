@@ -224,7 +224,7 @@ class HinDevImpl {
         sp<WorkThread>   mWorkThread;
         // sp<PreviewBuffThread>   mPreviewBuffThread;
         mutable Mutex mLock;
-        mutable Mutex mBufferLock;
+        Mutex mBufferLock;
         int mHinDevHandle;
         struct HinNodeInfo *mHinNodeInfo;
         sp<V4L2DeviceEvent>     mV4l2Event;
