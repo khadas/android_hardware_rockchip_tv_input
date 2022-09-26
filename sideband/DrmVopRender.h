@@ -44,7 +44,7 @@ enum {
 };
 #endif
 
-#define MAX_DISPLAY_NUM 10
+#define MAX_DISPLAY_NUM 4
 #define SKIP_FRAME_TIME 2000000000
 
 struct plane_prop {
@@ -151,7 +151,7 @@ private:
         bool connected;
     } DisplayInfo_t;
 
-    mutable Mutex mVopPlaneLock;
+    Mutex mVopPlaneLock;
     std::vector<DisplayInfo_t> mDisplayInfos;
     bool mEnableSkipFrame;
     nsecs_t mSkipFrameStartTime = 0;
