@@ -120,9 +120,9 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
-	     s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
+             s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
              event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
-	     break;
+             break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
              std::map<std::string, std::string> data;
              s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
