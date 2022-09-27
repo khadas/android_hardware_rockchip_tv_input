@@ -308,5 +308,7 @@ class HinDevImpl {
         int mIepBuffIndex = 0;
         int mIepBuffOutIndex = 0;
         bool mUseIep = false;
+        bool mPqIniting = false;
+        int mLastPqStatus = 0;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

@@ -374,7 +374,7 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
     case HAL_PIXEL_FORMAT_YCrCb_NV12:
       return DRM_FORMAT_NV12;
     case HAL_PIXEL_FORMAT_YCrCb_NV12_10:
-      return DRM_FORMAT_NV12_10;
+      return DRM_FORMAT_NV15;
     case HAL_PIXEL_FORMAT_YCbCr_422_SP: 
       return DRM_FORMAT_NV16;
     case HAL_PIXEL_FORMAT_YCbCr_444_888:
@@ -519,7 +519,11 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         bo.height = src_h;
         //bo.format = ConvertHalFormatToDrm(HAL_PIXEL_FORMAT_YCrCb_NV12);
         bo.format = ConvertHalFormatToDrm(src_format);
-        bo.pitches[0] = src_stride;
+        if (src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
+            bo.pitches[0] = ALIGN(src_stride / 4 * 5, 256);
+        } else {
+            bo.pitches[0] = src_stride;
+        }
         bo.gem_handles[0] = gem_handle;
         bo.offsets[0] = 0;
         if(src_format == HAL_PIXEL_FORMAT_YCrCb_NV12
@@ -538,10 +542,10 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
             bo.gem_handles[1] = gem_handle;
             bo.offsets[1] = bo.pitches[0] * bo.height;
         }
-        if (src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
-            bo.width = src_w / 1.25;
-            bo.width = ALIGN_DOWN(bo.width, 2);
-        }
+        //if (src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
+        //    bo.width = src_w / 1.25;
+        //    bo.width = ALIGN_DOWN(bo.width, 2);
+        //}
         ALOGD("width=%d,height=%d,format=%x,fd=%d,src_stride=%d, pitched=%d-%d",
             bo.width, bo.height, bo.format, fd, src_stride, bo.pitches[0], bo.pitches[1]);
         ret = drmModeAddFB2(mDrmFd, bo.width, bo.height, bo.format, bo.gem_handles,\
