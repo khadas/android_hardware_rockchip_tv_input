@@ -1416,11 +1416,12 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                 mRkpq->init(mSrcFrameWidth, mSrcFrameHeight, width_stride, mDstFrameWidth, mDstFrameHeight, 64, fmt, src_color_space, RKPQ_IMG_FMT_NV12, dst_color_space, flag);
             }
             ALOGD("rkpq init finish");
+            ALOGD("rkpq iep status %d ", mUseIep);
             if (mUseIep) {
                 if (mRkiep == nullptr) {
                     mRkiep = new rkiep();
                 }
-                mRkiep->iep2_init(mDstFrameWidth, mDstFrameHeight, fmt);
+                mRkiep->iep2_init(ALIGN(mDstFrameWidth, 64), mDstFrameHeight, fmt);
             }
         }
     }
@@ -1829,8 +1830,12 @@ int HinDevImpl::check_interlaced() {
 }
 
 void HinDevImpl::set_interlaced(int interlaced) {
-    if (interlaced == 1) {
-        mUseIep = true;
+    int pqEnable = property_get_int32(TV_INPUT_PQ_ENABLE, 0);
+    if (pqEnable == 1)  {
+        if (interlaced == 1)
+            mUseIep = true;
+        else
+            mUseIep = false;
     } else {
         mUseIep = false;
     }

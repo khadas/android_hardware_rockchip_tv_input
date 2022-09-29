@@ -121,6 +121,7 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
              s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
+             ALOGD("s_HinDevStreamInterlaced %d ", s_HinDevStreamInterlaced);
              event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
              break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
