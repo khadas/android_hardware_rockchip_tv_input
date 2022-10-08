@@ -1586,6 +1586,8 @@ int HinDevImpl::workThread()
 
             if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)
                     || (mPqMode & PQ_NORMAL) == PQ_NORMAL || mPqIniting) {
+                    if(mDebugLevel == 3)
+                        ALOGE("workThread mSidebandWindow no show, mPqMode %d mPixelFormat %d mPqIniting %d", mPqMode, V4L2_PIX_FMT_BGR24, mPqIniting);
             } else {
                 mSidebandWindow->show(
                     mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
@@ -1735,6 +1737,8 @@ int HinDevImpl::pqBufferThread() {
             }
             if (showPqFrame) {
                 mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio);
+            } else if(mDebugLevel == 3) {
+                ALOGE("pq mSidebandWindow no show, because showPqFrame false");
             }
             mPqBufferHandle[mPqBuffOutIndex].isFilled = false;
             mPqBuffOutIndex++;
@@ -1788,9 +1792,6 @@ bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* d
 int HinDevImpl::iepBufferThread() {
     //Mutex::Autolock autoLock(mBufferLock); will happend rob wait if mBufferLock
     if (mState == START) {
-        /*if (!mIepBufferHandle.empty()){
-            ALOGD("%s  %d %d %d %d ", __FUNCTION__, mIepBufferHandle[0].isFilled, mIepBufferHandle[1].isFilled, mIepBufferHandle[2].isFilled, mIepBufferHandle[3].isFilled);
-        }*/
         if (mPqMode != PQ_OFF && !mIepBufferHandle.empty() && mUseIep) {
             int cur = mIepBuffOutIndex;
             int last1 = (cur + SIDEBAND_IEP_BUFF_CNT -1)%SIDEBAND_IEP_BUFF_CNT;
@@ -1802,6 +1803,9 @@ int HinDevImpl::iepBufferThread() {
                 mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
                     mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
                 if (mState != START) {
+                    if(mDebugLevel == 3) {
+                        ALOGE("iep mState != START return NO_ERROR");
+                    }
                     return NO_ERROR;
                 }
                 mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio);
