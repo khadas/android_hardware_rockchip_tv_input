@@ -212,8 +212,8 @@ HinDevImpl::HinDevImpl()
     property_get(DEBUG_LEVEL_PROPNAME, prop_value, "0");
     mDebugLevel = (int)atoi(prop_value);
 
-    property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
-    mSkipFrame = (int)atoi(prop_value);
+    //property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
+    //mSkipFrame = (int)atoi(prop_value);
 
     property_get(TV_INPUT_DUMP_TYPE, prop_value, "0");
     mDumpType = (int)atoi(prop_value);
@@ -251,6 +251,12 @@ int HinDevImpl::init(int id,int initType) {
     mNotifyQueueCb = NULL;
     mState = STOPED;
     mANativeWindow = NULL;
+    if (mWorkThread != NULL) {
+        DEBUG_PRINT(3, "[%s %d] mWorkThread not null, need thread exit", __FUNCTION__, __LINE__);
+        mWorkThread->requestExit();
+        mWorkThread.clear();
+        mWorkThread = NULL;
+    }
     mWorkThread = NULL;
     mPqBufferThread = NULL;
     mIepBufferThread = NULL;
@@ -259,6 +265,10 @@ int HinDevImpl::init(int id,int initType) {
     // mPreviewBuffThread = NULL;
     mTvInputCB = NULL;
     mOpen = false;
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
+    mSkipFrame = (int)atoi(prop_value);
+    DEBUG_PRINT(3, "[%s %d] mSkipFrame=%d", __FUNCTION__, __LINE__, mSkipFrame);
 
     /**
      *  init RTSidebandWindow
@@ -950,7 +960,7 @@ int HinDevImpl::set_screen_mode(int mode)
 int HinDevImpl::aquire_buffer()
 {
     int ret = UNKNOWN_ERROR;
-    DEBUG_PRINT(mDebugLevel, "%s %d", __FUNCTION__, __LINE__);
+    DEBUG_PRINT(3, "%s %d", __FUNCTION__, __LINE__);
     for (int i = 0; i < mBufferCount; i++) {
         memset(&mHinNodeInfo->planes[i], 0, sizeof(struct v4l2_plane));
         memset(&mHinNodeInfo->bufferArray[i], 0, sizeof(struct v4l2_buffer));
@@ -1523,6 +1533,7 @@ void HinDevImpl::buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int src
 int HinDevImpl::workThread()
 {
     int ret;
+    pthread_t tid=0;
     if (mState == START /*&& !mFirstRequestCapture*/ && mRequestCaptureCount > 0) {
         //DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  	//mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].flags = V4L2_BUF_FLAG_NO_CACHE_INVALIDATE |
@@ -1535,18 +1546,41 @@ int HinDevImpl::workThread()
                 mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % APP_PREVIEW_BUFF_CNT;
             mRequestCaptureCount--;
         }
+
+        int ts;
+        fd_set fds;
+        struct timeval tv;
+        FD_ZERO(&fds);
+        FD_SET(mHinDevHandle, &fds);
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        ts = select(mHinDevHandle + 1, &fds, NULL, NULL, &tv);
+        if (mDebugLevel) {
+            tid = pthread_self();
+            for (int i = 0; i < SIDEBAND_WINDOW_BUFF_CNT; i++) {
+               DEBUG_PRINT(mDebugLevel, "==now tid=%lu, i=%d, index=%d, fd=%d", tid, i, mHinNodeInfo->bufferArray[i].index, mHinNodeInfo->bufferArray[i].m.planes[0].m.fd);
+            }
+        }
+        if(ts == 0 || mState != START) {
+            return 0;
+        }
+
         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
         if (ret < 0) {
             DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
             return 0;
         } else {
-            DEBUG_PRINT(mDebugLevel, "VIDIOC_DQBUF successful.mDumpType=%d,mDumpFrameCount=%d",mDumpType,mDumpFrameCount);
+            if (mDebugLevel == 3) {
+                ALOGE("VIDIOC_DQBUF successful.mDumpType=%d,mDumpFrameCount=%d, tid=%lu, currBufferHandleIndex=%d, fd=%d",
+                    mDumpType,mDumpFrameCount, tid, mHinNodeInfo->currBufferHandleIndex, mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd);
+            }
         }
         if (mState != START) {
             //DEBUG_PRINT(3, "mState != START skip");
             return NO_ERROR;
         }
-#ifdef DUMP_YUV_IMG
+
+        if (mEnableDump > 0) {
             if (mDumpType == 0 && mDumpFrameCount > 0) {
                 char fileName[128] = {0};
                 sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d_%d.yuv", mSrcFrameWidth, mSrcFrameHeight, mDumpFrameCount);
@@ -1558,7 +1592,8 @@ int HinDevImpl::workThread()
                 mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
                 mDumpFrameCount--;
             }
-#endif
+        }
+        mSidebandWindow->setDebugLevel(mDebugLevel);
 
         if (mFrameType & TYPF_SIDEBAND_WINDOW) {
             // add flushCache to prevent image tearing and ghosting caused by
@@ -1589,8 +1624,16 @@ int HinDevImpl::workThread()
                     if(mDebugLevel == 3)
                         ALOGE("workThread mSidebandWindow no show, mPqMode %d mPixelFormat %d mPqIniting %d", mPqMode, V4L2_PIX_FMT_BGR24, mPqIniting);
             } else {
-                mSidebandWindow->show(
-                    mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
+                if (mSkipFrame > 0) {
+                    mSkipFrame--;
+                    DEBUG_PRINT(3, "mSkipFrame not to show %d", mSkipFrame);
+                } else {
+                    if (mDebugLevel == 3) {
+                        ALOGE("sidebandwindow show index=%d", currPreviewHandlerIndex);
+                    }
+                    mSidebandWindow->show(
+                        mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
+                }
             }
 
 //encode:sendFrame
@@ -1695,6 +1738,19 @@ int HinDevImpl::pqBufferThread() {
         pqData.clear();
         pqData.insert({"mode", to_string(pqMode)});
         doPQCmd(pqData);
+    }
+
+    char debugInfoValue[PROPERTY_VALUE_MAX] = {0};
+    property_get(DEBUG_HDMIIN_LEVEL, debugInfoValue, "0");
+    mDebugLevel = (int)atoi(debugInfoValue);
+    property_get(DEBUG_HDMIIN_DUMP, debugInfoValue, "0");
+    mEnableDump = (int)atoi(debugInfoValue);
+    if (mEnableDump > 0) {
+        property_get(DEBUG_HDMIIN_DUMPNUM, debugInfoValue, "0");
+        int dumpFrameCount = (int)atoi(debugInfoValue);
+        if (dumpFrameCount > 0) {
+            mDumpFrameCount = dumpFrameCount;
+        }
     }
 
     if (mState == START) {
