@@ -315,6 +315,13 @@ status_t RTSidebandWindow::show(buffer_handle_t handle, int displayRatio) {
     return 0;
 }
 
+void RTSidebandWindow::setDebugLevel(int debugLevel) {
+    if (mDebugLevel != debugLevel && mVopRender) {
+        mDebugLevel = debugLevel;
+        mVopRender->setDebugLevel(debugLevel);
+    }
+}
+
 status_t RTSidebandWindow::clearVopArea() {
     ALOGD("RTSidebandWindow::clearVopArea()");
     mVopRender->DestoryFB();

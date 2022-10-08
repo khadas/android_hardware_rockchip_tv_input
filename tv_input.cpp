@@ -112,10 +112,12 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
 		event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
              */
         if (!isHdmiIn) {
+            if (s_TvInputPriv->mDev) {
             std::map<std::string, std::string> data;
             s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
             event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
             event.priv_app_cmd.action = "hdmiinout";
+            }
         }
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
@@ -125,10 +127,12 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
              event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
              break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
+             if (s_TvInputPriv->mDev) {
              std::map<std::string, std::string> data;
              s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
              event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
              event.priv_app_cmd.action = "hdmiinout";
+             }
              break;
     }
     ALOGE("%s width:%d,height:%d,format:0x%x,%d", __FUNCTION__,s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,isHdmiIn);

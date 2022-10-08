@@ -413,6 +413,9 @@ bool DrmVopRender::FindSidebandPlane(int device) {
         }
     }
 
+    if (mDebugLevel == 3) {
+        ALOGE("start to find ASYNC_COMMIT output->plane_res->count_planes=%d", output->plane_res->count_planes);
+    }
     for(uint32_t i = 0; i < output->plane_res->count_planes; i++) {
         if (plandIdCount == 0) {
             break;
@@ -427,7 +430,9 @@ bool DrmVopRender::FindSidebandPlane(int device) {
         for (uint32_t j = 0; j < props->count_props; j++) {
             prop = drmModeGetProperty(mDrmFd, props->props[j]);
             if (!strcmp(prop->name, "ASYNC_COMMIT")) {
-                ALOGV("find ASYNC_COMMIT plane id=%d value=%lld====%d-%d", plane->plane_id, (long long)props->prop_values[j], i, j);
+                if (mDebugLevel == 3) {
+                    ALOGE("find ASYNC_COMMIT plane id=%d value=%lld====%d-%d", plane->plane_id, (long long)props->prop_values[j], i, j);
+                }
                 if (props->prop_values[j] != 0) {
                     plane_id = plane->plane_id;
                 }
@@ -617,8 +622,16 @@ bool DrmVopRender::needRedetect() {
     return false;
 }
 
+void DrmVopRender::setDebugLevel(int debugLevel) {
+    if (mDebugLevel != debugLevel) {
+        mDebugLevel = debugLevel;
+    }
+}
+
 bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio) {
-    ALOGV("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
+    if (mDebugLevel == 3) {
+        ALOGE("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
+    }
     if (needRedetect() && mInitialized) {
         ALOGE("=================needRedetect===================");
         DestoryFB();
@@ -630,6 +643,9 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     } else if (mEnableSkipFrame) {
         nsecs_t now = systemTime();
         if (now - mSkipFrameStartTime < SKIP_FRAME_TIME) {
+            if (mDebugLevel == 3) {
+                ALOGE("%s come in, skip frame", __FUNCTION__);
+            }
             return false;
         }
     }
@@ -668,6 +684,9 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
     src_h = height;
 
     if (!mInitialized || !findAvailedPlane || fb_id < 0) {
+        if (mDebugLevel == 3) {
+            ALOGE("%s come in %d, %d, %d", __FUNCTION__, mInitialized, findAvailedPlane, fb_id);
+        }
         return false;
     }
 
@@ -705,8 +724,10 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                           ratio_w, ratio_h,
                           0, 0,
                           src_w << 16, src_h << 16);
-                ALOGV("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
-                    strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h);
+                if (mDebugLevel == 3) {
+                    ALOGV("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
+                        strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h);
+                }
             }
         }
     }

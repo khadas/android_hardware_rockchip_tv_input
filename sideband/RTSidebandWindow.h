@@ -111,6 +111,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstHandle, int width, int height);
     status_t show(buffer_handle_t buffer, int displayRadio);
     status_t clearVopArea();
+    void setDebugLevel(int debugLevel);
 
  private:
     RTSidebandWindow(const RTSidebandWindow& other);

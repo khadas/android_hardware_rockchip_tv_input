@@ -75,7 +75,7 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 );
 
 #define TV_INPUT_USER_FORMAT "vendor.tvinput.format"
-#define TV_INPUT_SKIP_FRAME "vendor.tvinput.skipframe"
+#define TV_INPUT_SKIP_FRAME "persist.vendor.tvinput.skipframe"
 #define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
 #define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
 #define TV_INPUT_HAS_ENCODE "vendor.tvinput.encode"
@@ -87,6 +87,9 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_HDMIIN "vendor.rk.hdmiin"
 #define TV_INPUT_RESOLUTION_MAIN "persist.vendor.resolution.main"
 #define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
+#define DEBUG_HDMIIN_LEVEL "vendor.hdmiin.debug.level"
+#define DEBUG_HDMIIN_DUMP "vendor.hdmiin.debug.dump"
+#define DEBUG_HDMIIN_DUMPNUM "vendor.hdmiin.debug.dumpnum"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \
     do {                                                      \

@@ -310,5 +310,6 @@ class HinDevImpl {
         bool mUseIep = false;
         bool mPqIniting = false;
         int mLastPqStatus = 0;
+        int mEnableDump;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };
