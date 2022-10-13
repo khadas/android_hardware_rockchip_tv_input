@@ -284,16 +284,8 @@ int HinDevImpl::init(int id,int initType) {
     if (initType == TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
         mFrameType |= TYPF_SIDEBAND_WINDOW;
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
-        char prop_value[PROPERTY_VALUE_MAX] = {0};
-        property_get(TV_INPUT_PQ_ENABLE, prop_value, "0");
-        int value = (int)atoi(prop_value);
-        if (value != 0) {
-            info.usage |= GRALLOC_USAGE_HW_COMPOSER
-            | RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES;
-        } else {
-            info.usage |= GRALLOC_USAGE_HW_COMPOSER
+        info.usage |= GRALLOC_USAGE_HW_COMPOSER
             | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
-        }
         mPqIniting = false;
         mFirstRequestCapture = false;
         mRequestCaptureCount = 1;
@@ -1343,7 +1335,7 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
             for (int i=0; i<mPqBufferHandle.size(); i++) {
                 //mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].srcHandle, -1, -1, -1);
                 mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
-                    HAL_PIXEL_FORMAT_YCrCb_NV12_10, RK_GRALLOC_USAGE_STRIDE_ALIGN_256_ODD_TIMES);
+                    HAL_PIXEL_FORMAT_YCrCb_NV12_10, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
             }
             ALOGD("%s all pqbufferhandle", __FUNCTION__);
         }
