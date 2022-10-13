@@ -525,7 +525,7 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         //bo.format = ConvertHalFormatToDrm(HAL_PIXEL_FORMAT_YCrCb_NV12);
         bo.format = ConvertHalFormatToDrm(src_format);
         if (src_format == HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
-            bo.pitches[0] = ALIGN(src_stride / 4 * 5, 256);
+            bo.pitches[0] = ALIGN(src_stride / 4 * 5, 64);
         } else {
             bo.pitches[0] = src_stride;
         }
