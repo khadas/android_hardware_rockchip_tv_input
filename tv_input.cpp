@@ -67,6 +67,7 @@ static tv_input_request_info_t requestInfo;
 static int s_HinDevStreamWidth = 1280;
 static int s_HinDevStreamHeight = 720;
 static int s_HinDevStreamFormat = DEFAULT_TVHAL_STREAM_FORMAT;
+static int s_HinDevStreamInterlaced = 0;
 //static unsigned int gHinDevOpened = 0;
 //static Mutex gHinDevOpenLock;
 //static HinDevImpl* gHinHals[MAX_HIN_DEVICE_SUPPORTED];
@@ -111,21 +112,27 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
 		event.type = TV_INPUT_EVENT_DEVICE_AVAILABLE;
              */
         if (!isHdmiIn) {
+            if (s_TvInputPriv->mDev) {
             std::map<std::string, std::string> data;
             s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
             event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
             event.priv_app_cmd.action = "hdmiinout";
+            }
         }
              break;
         case V4L2_EVENT_SOURCE_CHANGE:
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
+             s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
+             ALOGD("s_HinDevStreamInterlaced %d ", s_HinDevStreamInterlaced);
              event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
-	     break;
+             break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
+             if (s_TvInputPriv->mDev) {
              std::map<std::string, std::string> data;
              s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
              event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
              event.priv_app_cmd.action = "hdmiinout";
+             }
              break;
     }
     ALOGE("%s width:%d,height:%d,format:0x%x,%d", __FUNCTION__,s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,isHdmiIn);
@@ -178,6 +185,7 @@ static int hin_dev_open(int deviceId, int type)
                 return -1;
             }
             ALOGD("hinDevImpl->findDevice %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
+            s_TvInputPriv->mDev->set_interlaced(s_HinDevStreamInterlaced);
             s_TvInputPriv->isOpened = true;
         }
     }
@@ -289,8 +297,14 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             requestInfo.streamId = stream->stream_id;
 
             if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))
-		return -EINVAL;
-            s_TvInputPriv->mDev->set_crop(0, 0, width, height);
+                return -EINVAL;
+            int dst_width = 0, dst_height = 0;
+            bool use_zme = s_TvInputPriv->mDev->check_zme(width, height, &dst_width, &dst_height);
+            if(use_zme) {
+                s_TvInputPriv->mDev->set_crop(0, 0, dst_width, dst_height);
+            } else {
+                s_TvInputPriv->mDev->set_crop(0, 0, width, height);
+            }
             if (stream->type & TYPF_SIDEBAND_WINDOW) {
                 s_TvInputPriv->mStreamType = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
                 stream->sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());

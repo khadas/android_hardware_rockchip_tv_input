@@ -96,6 +96,7 @@ public:
 
     bool SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio);
     bool ClearDrmPlaneContent(int device, int32_t width, int32_t height);
+    void setDebugLevel(int debugLevel);
 private:
     void resetOutput(int index);
     bool FindSidebandPlane(int device);
@@ -158,6 +159,7 @@ private:
     int mDrmFd;
    // Mutex mLock;
     const gralloc_module_t *gralloc_;
+    int mDebugLevel;
 };
 
 } // namespace android
