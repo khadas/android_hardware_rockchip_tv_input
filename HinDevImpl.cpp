@@ -206,6 +206,7 @@ HinDevImpl::HinDevImpl()
                     mDumpType(0),
                     mDumpFrameCount(30),
                     mFirstRequestCapture(true),
+                    mPqMode(0),
                     mUseZme(false)
 {
     char prop_value[PROPERTY_VALUE_MAX] = {0};
@@ -560,6 +561,7 @@ int HinDevImpl::stop()
 {
     ALOGD("%s %d", __FUNCTION__, __LINE__);
     int ret;
+    mPqMode = PQ_OFF;
     mState = STOPED;
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     property_get(TV_INPUT_PQ_ENABLE, prop_value, "0");
@@ -1021,8 +1023,8 @@ int HinDevImpl::release_buffer()
 
     if (!mPqBufferHandle.empty()) {
         for (int i=0; i<mPqBufferHandle.size(); i++) {
-            mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
-            mPqBufferHandle[i].srcHandle = NULL;
+            //mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
+            //mPqBufferHandle[i].srcHandle = NULL;
             mSidebandWindow->freeBuffer(&mPqBufferHandle[i].outHandle, 1);
             mPqBufferHandle[i].outHandle = NULL;
         }
@@ -1030,7 +1032,7 @@ int HinDevImpl::release_buffer()
     }
 
     if (mUseIep && !mIepBufferHandle.empty()) {
-        for (int i=0; i<mPqBufferHandle.size(); i++) {
+        for (int i=0; i<mIepBufferHandle.size(); i++) {
             mSidebandWindow->freeBuffer(&mIepBufferHandle[i].srcHandle, 1);
             mIepBufferHandle[i].srcHandle = NULL;
             mSidebandWindow->freeBuffer(&mIepBufferHandle[i].outHandle, 1);
@@ -1598,7 +1600,7 @@ int HinDevImpl::workThread()
                 return ret;
             }
 
-            if (mPqMode != PQ_OFF) {
+            if (mPqMode != PQ_OFF && !mPqBufferHandle.empty()) {
                 if (mPqBufferHandle[mPqBuffIndex].isFilled) {
                     DEBUG_PRINT(3, "skip pq buffer");
                 } else {
