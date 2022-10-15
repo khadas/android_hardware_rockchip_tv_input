@@ -215,6 +215,8 @@ HinDevImpl::HinDevImpl()
 
     //property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
     //mSkipFrame = (int)atoi(prop_value);
+    property_get(DEBUG_HDMIIN_DUMP, prop_value, "0");
+    mEnableDump = (int)atoi(prop_value);
 
     property_get(TV_INPUT_DUMP_TYPE, prop_value, "0");
     mDumpType = (int)atoi(prop_value);
@@ -1024,7 +1026,7 @@ int HinDevImpl::release_buffer()
     if (!mPqBufferHandle.empty()) {
         for (int i=0; i<mPqBufferHandle.size(); i++) {
             //mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
-            //mPqBufferHandle[i].srcHandle = NULL;
+            mPqBufferHandle[i].srcHandle = NULL;
             mSidebandWindow->freeBuffer(&mPqBufferHandle[i].outHandle, 1);
             mPqBufferHandle[i].outHandle = NULL;
         }
@@ -1574,7 +1576,7 @@ int HinDevImpl::workThread()
             return NO_ERROR;
         }
 
-        if (mEnableDump > 0) {
+        if (mEnableDump == 1) {
             if (mDumpType == 0 && mDumpFrameCount > 0) {
                 char fileName[128] = {0};
                 sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d_%d.yuv", mSrcFrameWidth, mSrcFrameHeight, mDumpFrameCount);
@@ -1739,7 +1741,7 @@ int HinDevImpl::pqBufferThread() {
     mDebugLevel = (int)atoi(debugInfoValue);
     property_get(DEBUG_HDMIIN_DUMP, debugInfoValue, "0");
     mEnableDump = (int)atoi(debugInfoValue);
-    if (mEnableDump > 0) {
+    if (mEnableDump == 1) {
         property_get(DEBUG_HDMIIN_DUMPNUM, debugInfoValue, "0");
         int dumpFrameCount = (int)atoi(debugInfoValue);
         if (dumpFrameCount > 0) {
