@@ -296,7 +296,7 @@ class HinDevImpl {
         std::vector<tv_pq_buffer_info_t> mIepBufferHandle;
         int mRecordCodingBuffIndex = 0;
         int mDisplayRatio = FULL_SCREEN;
-        int mPqMode;
+        int mPqMode = PQ_OFF;
         int mOutRange = HDMIRX_DEFAULT_RANGE;
         int mLastOutRange = mOutRange;
         std::vector<tv_pq_buffer_info_t> mPqBufferHandle;
@@ -310,6 +310,6 @@ class HinDevImpl {
         bool mUseIep = false;
         bool mPqIniting = false;
         int mLastPqStatus = 0;
-        int mEnableDump;
+        int mEnableDump = 0;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };
