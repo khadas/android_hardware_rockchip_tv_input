@@ -384,7 +384,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 
     mSrcFrameWidth = initWidth;
     mSrcFrameHeight = initHeight;
-    int dst_width = 0, dst_height = 0;
+    /*int dst_width = 0, dst_height = 0;
     bool use_zme = check_zme(mSrcFrameWidth, mSrcFrameHeight, &dst_width, &dst_height);
     if(use_zme) {
         mDstFrameWidth = dst_width;
@@ -392,7 +392,9 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     } else {
         mDstFrameWidth = mSrcFrameWidth;
         mDstFrameHeight = mSrcFrameHeight;
-    }
+    }*/
+    mDstFrameWidth = mSrcFrameWidth;
+    mDstFrameHeight = mSrcFrameHeight;
     mBufferSize = mSrcFrameWidth * mSrcFrameHeight * 3/2;
     return 0;
 }
@@ -796,6 +798,8 @@ int HinDevImpl::set_format(int width, int height, int color_format)
 
     mSrcFrameWidth = width;
     mSrcFrameHeight = height;
+    mDstFrameWidth = mSrcFrameWidth;
+    mDstFrameHeight = mSrcFrameHeight;
     //mPixelFormat = color_format;
     mHinNodeInfo->width = width;
     mHinNodeInfo->height = height;
@@ -926,6 +930,8 @@ int HinDevImpl::get_current_sourcesize(int& width,  int& height,int& pixelformat
 
     mSrcFrameWidth = width;
     mSrcFrameHeight = height;
+    mDstFrameWidth = mSrcFrameWidth;
+    mDstFrameHeight = mSrcFrameHeight;
     mBufferSize = mSrcFrameWidth * mSrcFrameHeight * 3/2;
     mPixelFormat = format.fmt.pix.pixelformat;
     ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d, fomat 0x%x", width,  height,pixelformat);
