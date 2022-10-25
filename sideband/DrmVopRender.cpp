@@ -328,13 +328,23 @@ bool DrmVopRender::detect(int device)
     if (output->mDrmModeInfos.empty()) {
         ALOGD("final mDrmModeInfos is empty");
     } else {
+        int last_crtc_id = -1;
         for (int i=0; i<output->mDrmModeInfos.size(); i++) {
             if (output->mDrmModeInfos[i].crtc) {
-               ALOGD("final  crtc->crtc_id %d %s", output->mDrmModeInfos[i].crtc->crtc_id, output->mDrmModeInfos[i].crtc_plane_mask);
+                int crtc_id = output->mDrmModeInfos[i].crtc->crtc_id;
+                ALOGD("final  crtc->crtc_id %d %s", crtc_id, output->mDrmModeInfos[i].crtc_plane_mask);
                output->mDrmModeInfos[i].props = drmModeObjectGetProperties(mDrmFd, output->mDrmModeInfos[i].crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
                if (!output->mDrmModeInfos[i].props) {
                    ALOGE("Failed to found props crtc[%d] %s\n", output->mDrmModeInfos[i].crtc->crtc_id, strerror(errno));
                }
+                if (last_crtc_id == crtc_id) {
+                    ALOGE("same crtc_id need reconnect");
+                    for (int i=0; i<mDisplayInfos.size(); i++) {
+                        mDisplayInfos[i].connected = false;
+                    }
+                } else {
+                    last_crtc_id = crtc_id;
+                }
             }
         }
     }
@@ -726,7 +736,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                           0, 0,
                           src_w << 16, src_h << 16);
                 if (mDebugLevel == 3) {
-                    ALOGV("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
+                    ALOGD("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
                         strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h);
                 }
             }
