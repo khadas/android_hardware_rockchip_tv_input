@@ -1415,7 +1415,7 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
             if ((tempPqMode & PQ_LF_RANGE) == PQ_LF_RANGE) {
                 char prop_value[PROPERTY_VALUE_MAX] = {0};
                 property_get(TV_INPUT_PQ_RANGE, prop_value, "auto");
-                if (!strcmp(prop_value, "limit") || src_color_space == RKPQ_CLR_SPC_RGB_LIMITED) {
+                if (!strcmp(prop_value, "limit")) {
                     dst_color_space = RKPQ_CLR_SPC_YUV_601_LIMITED;
                 }
             }
@@ -1718,14 +1718,15 @@ int HinDevImpl::pqBufferThread() {
     value = (int)atoi(prop_value);
     if (value != 0)  {
         pqMode |= PQ_NORMAL;
-    } else {
+    } 
+    /*else {
         property_get(TV_INPUT_PQ_RANGE, prop_value, "auto");
         int fmt = getPqFmt(mPixelFormat);
         if (!strcmp(prop_value, "limit") || (!strcmp(prop_value, "auto") && fmt == RKPQ_IMG_FMT_BG24 &&
             mFrameColorRange != HDMIRX_FULL_RANGE)) {
             pqMode |= PQ_LF_RANGE;
         }
-    }
+    }*/
     if (mLastPqStatus != value) {
         mPqIniting = true;
     }
