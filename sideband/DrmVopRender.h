@@ -154,12 +154,12 @@ private:
 
     Mutex mVopPlaneLock;
     std::vector<DisplayInfo_t> mDisplayInfos;
-    bool mEnableSkipFrame;
+    bool mEnableSkipFrame = false;
     nsecs_t mSkipFrameStartTime = 0;
     int mDrmFd;
    // Mutex mLock;
     const gralloc_module_t *gralloc_;
-    int mDebugLevel;
+    int mDebugLevel = 0;
 };
 
 } // namespace android
