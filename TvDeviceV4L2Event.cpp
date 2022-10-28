@@ -33,7 +33,7 @@ int V4L2DeviceEvent::initialize(int fd){
     subscribeEvent(RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST);
     mV4L2EventThread = new V4L2EventThread(mFd,callback_);
     mV4L2EventThread->v4l2pipe();
-    mV4L2EventThread->run("Tvinput_Ev", android::PRIORITY_DISPLAY);
+    mV4L2EventThread->run("Tif_Ev", android::PRIORITY_DISPLAY);
     return 0;
 }
 void V4L2DeviceEvent::closeEventThread() {
