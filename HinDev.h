@@ -29,6 +29,7 @@
 #include "common/RgaCropScale.h"
 #include "common/HandleImporter.h"
 #include "common/rk_hdmirx_config.h"
+#include "common/rk-camera-module.h"
 #include <rkpq.h>
 #include "rkiep.h"
 #include "MppEncodeServer.h"
@@ -129,11 +130,12 @@ class HinDevImpl {
     public:
         HinDevImpl();
         ~HinDevImpl();
-        int init(int id,int type);
+        int init(int id,int type, int& initWidth, int& initHeight,int& initFormat);
         int findDevice(int id, int& initWidth, int& initHeight,int& initFormat);
         int start();
         int stop();
         int pause();
+        int get_csi_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
 	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
         int get_HdmiIn(bool enforce);
@@ -275,8 +277,10 @@ class HinDevImpl {
         mutable Mutex mLock;
         Mutex mBufferLock;
         int mHinDevHandle;
+        int mHinDevEventHandle = -1;
         struct HinNodeInfo *mHinNodeInfo;
         sp<V4L2DeviceEvent>     mV4l2Event;
+        sp<V4L2DeviceEvent>     mCsiV4l2Event;
         buffer_handle_t mSignalHandle = NULL;
         buffer_handle_t         mSidebandHandle;
         sp<RTSidebandWindow>    mSidebandWindow;
@@ -310,5 +314,6 @@ class HinDevImpl {
         bool mPqIniting = false;
         int mLastPqStatus = 0;
         int mEnableDump = 0;
+        int mHdmiInType = 0;//0 hdmirx, 1 mipicsi
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

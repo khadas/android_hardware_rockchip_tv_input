@@ -5,6 +5,7 @@
 #include <utils/Log.h>
 #include <utils/String8.h>
 
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/select.h>
 #include <linux/videodev2.h>
+#include <linux/media.h>
 #include <sys/time.h>
 #include <utils/Timers.h>
 
@@ -51,8 +53,13 @@ const int kMaxDevicePathLen = 256;
 const char* kDevicePath = "/dev/";
 constexpr char kPrefix[] = "video";
 constexpr int kPrefixLen = sizeof(kPrefix) - 1;
+constexpr char kCsiPrefix[] = "v4l-subdev";
+constexpr int kCsiPrefixLen = sizeof(kCsiPrefix) - 1;
 //constexpr int kDevicePrefixLen = sizeof(kDevicePath) + kPrefixLen + 1;
 constexpr char kHdmiNodeName[] = "rk_hdmirx";
+constexpr char kCsiPreSubDevModule[] = "HDMI-MIPI";
+constexpr int kCsiPreSubDevModuleLen = sizeof(kCsiPreSubDevModule) - 1;
+constexpr char kCsiPreBusInfo[] = "platform:rkcif-mipi-lvds";
 
 nsecs_t now = 0;
 nsecs_t mLastTime = 0;
@@ -201,6 +208,7 @@ static int  getNativeWindowFormat(int format)
 
 HinDevImpl::HinDevImpl()
     : mHinDevHandle(-1),
+                    mHinDevEventHandle(-1),
                     mHinNodeInfo(NULL),
                     mSidebandHandle(NULL),
                     mDumpFrameCount(30),
@@ -218,13 +226,38 @@ HinDevImpl::HinDevImpl()
     property_get(TV_INPUT_SHOW_FPS, prop_value, "0");
     mShowFps = (int)atoi(prop_value);
 
-    DEBUG_PRINT(1, "prop value : mDebugLevel=%d, mSkipFrame=%d", mDebugLevel, mSkipFrame);
+    property_get(TV_INPUT_HDMIIN_TYPE, prop_value, "0");
+    mHdmiInType = (int)atoi(prop_value);
+
+    ALOGE("prop value : mHdmiInType=%d, mDebugLevel=%d, mSkipFrame=%d",
+        mHdmiInType, mDebugLevel, mSkipFrame);
+
     mV4l2Event = new V4L2DeviceEvent();
     mSidebandWindow = new RTSidebandWindow();
 }
 
-int HinDevImpl::init(int id,int initType) {
-    DEBUG_PRINT(3, "%s id=%d, initType=%d", __FUNCTION__, id, initType);
+int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& initFormat) {
+    char prop_value[PROPERTY_VALUE_MAX] = {0};
+    property_get(TV_INPUT_HDMIIN_TYPE, prop_value, "0");
+    int currentHdmiInType = (int)atoi(prop_value);
+    ALOGE("lastHdmiInType=%d, nowHdmiInType=%d", mHdmiInType, currentHdmiInType);
+    if (mHdmiInType != currentHdmiInType) {
+        mHdmiInType = currentHdmiInType;
+        if (mV4l2Event) {
+            mV4l2Event->closePipe();
+            mV4l2Event->closeEventThread();
+        }
+        if (mHinDevHandle >= 0) {
+            close(mHinDevHandle);
+            mHinDevHandle = -1;
+        }
+        if (mHinDevEventHandle >= 0) {
+            close(mHinDevEventHandle);
+            mHinDevEventHandle = -1;
+        }
+        findDevice(0, initWidth, initHeight, initFormat);
+    }
+    ALOGE("%s mHdmiInType=%d, id=%d, initType=%d", __FUNCTION__, mHdmiInType, id, initType);
     if(get_HdmiIn(true) <= 0 || getNativeWindowFormat(mPixelFormat) == -1){
 	DEBUG_PRINT(3, "[%s %d] hdmi isnt in", __FUNCTION__, __LINE__);
         return -1;
@@ -234,6 +267,7 @@ int HinDevImpl::init(int id,int initType) {
     {
         DEBUG_PRINT(3, "[%s %d] no memory for mHinNodeInfo", __FUNCTION__, __LINE__);
         close(mHinDevHandle);
+        close(mHinDevEventHandle);
         return NO_MEMORY;
     }
     memset(mHinNodeInfo, 0, sizeof(struct HinNodeInfo));
@@ -258,7 +292,6 @@ int HinDevImpl::init(int id,int initType) {
     // mPreviewBuffThread = NULL;
     mTvInputCB = NULL;
     mOpen = false;
-    char prop_value[PROPERTY_VALUE_MAX] = {0};
     property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
     mSkipFrame = (int)atoi(prop_value);
     DEBUG_PRINT(3, "[%s %d] mSkipFrame=%d", __FUNCTION__, __LINE__, mSkipFrame);
@@ -301,6 +334,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     // Find existing /dev/video* devices
     DIR* devdir = opendir(kDevicePath);
     int videofd,ret;
+    string strCsiNum = "";
     if(devdir == 0) {
         ALOGE("%s: cannot open %s! Exiting threadloop", __FUNCTION__, kDevicePath);
         return -1;
@@ -308,7 +342,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     struct dirent* de;
     while ((de = readdir(devdir)) != 0) {
         // Find external v4l devices that's existing before we start watching and add them
-        if (!strncmp(kPrefix, de->d_name, kPrefixLen)) {
+        if (mHdmiInType == 0 && !strncmp(kPrefix, de->d_name, kPrefixLen)) {
 		std::string deviceId(de->d_name + kPrefixLen);
 		ALOGD(" v4l device %s found", de->d_name);
 		char v4l2DevicePath[kMaxDevicePathLen];
@@ -343,6 +377,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 		DEBUG_PRINT(3, "VIDIOC_QUERYCAP device_caps=0x%08x", cap.device_caps);
 		if(!strncmp(kHdmiNodeName, v4l2DeviceDriver, sizeof(kHdmiNodeName)-1)){
 			mHinDevHandle =  videofd;
+                mHinDevEventHandle = mHinDevHandle;
 			if ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
 				ALOGE("V4L2_CAP_VIDEO_CAPTURE is  a video capture device, capabilities: %x\n", cap.capabilities);
 					TVHAL_V4L2_BUF_TYPE = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -356,20 +391,116 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 			DEBUG_PRINT(3, "isnot hdmirx,VIDIOC_QUERYCAP driver=%s", cap.driver);
 		}
             }
+        } else if (mHdmiInType == 1 && !strncmp(kCsiPrefix, de->d_name, kCsiPrefixLen)) {
+            ALOGD(" v4l device %s found", de->d_name);
+            char v4l2SubDevPath[kMaxDevicePathLen];
+            snprintf(v4l2SubDevPath, kMaxDevicePathLen,"%s%s", kDevicePath, de->d_name);
+            videofd = open(v4l2SubDevPath, O_RDWR);
+            if (videofd < 0) {
+                ALOGE("[%s %d] mHinDevEventHandle:%x [%s]", __FUNCTION__, __LINE__, videofd,strerror(errno));
+                continue;
+            } else {
+                DEBUG_PRINT(1, "%s open device %s successful.", __FUNCTION__, v4l2SubDevPath);
+                uint32_t ishdmi = 0;
+                ret = ioctl(videofd, RKMODULE_GET_HDMI_MODE, (void*)&ishdmi);
+                if (ret < 0 || !ishdmi) {
+                    ALOGE("RKMODULE_GET_HDMI_MODE %s Failed, error: %s, ret=%d, ishdmi=%d", v4l2SubDevPath, strerror(errno), ret, ishdmi);
+                    close(videofd);
+                    continue;
+                }
+                struct rkmodule_inf minfo;
+                memset(&minfo, 0, sizeof(struct rkmodule_inf));
+                ret = ioctl(videofd, RKMODULE_GET_MODULE_INFO, &minfo);
+                if (ret < 0) {
+                    close(videofd);
+                    continue;
+                }
+                ALOGE("sensor name: %s, module name: %s", minfo.base.sensor, minfo.base.module);
+                if (strstr(minfo.base.module, kCsiPreSubDevModule)) {
+                    string temp(1,minfo.base.module[kCsiPreSubDevModuleLen]);
+                    if (strcmp(temp.c_str(), "0") != 0) {
+                        strCsiNum = minfo.base.module[kCsiPreSubDevModuleLen];
+                    }
+                    ALOGE("csiNum=%s", strCsiNum.c_str());
+                } else {
+                    continue;
+                }
+                mHinDevEventHandle = videofd;
+                break;
+            }
+        }
+    }
+    if (mHinDevEventHandle > 0 && mHinDevHandle < 0) {
+        rewinddir(devdir);
+        string strMinVideoPath = "zzzzzzzz";
+        int tempVideoFd = -1;
+        while ((de = readdir(devdir)) != 0) {
+            if (!strncmp(kPrefix, de->d_name, kPrefixLen)) {
+                char gadget_video[100] = {0};
+                sprintf(gadget_video, "/sys/class/video4linux/%s/function_name", de->d_name);
+                if (access(gadget_video, F_OK) == 0) {
+                    ALOGW("/dev/%s is uvc gadget device, don't open it!", de->d_name);
+                    continue;
+                }
+                char videoPath[kMaxDevicePathLen];
+                snprintf(videoPath, kMaxDevicePathLen,"%s%s", kDevicePath, de->d_name);
+                videofd = open(videoPath, O_RDWR);
+                if (videofd < 0){
+                    ALOGE("[%s %d] %s %x [%s]", __FUNCTION__, __LINE__, videoPath, videofd,strerror(errno));
+                    continue;
+                } else {
+                    struct v4l2_capability cap;
+                    memset(&cap, 0, sizeof(struct v4l2_capability));
+                    ret = ioctl(videofd, VIDIOC_QUERYCAP, &cap);
+                    if (ret < 0) {
+                        ALOGE("VIDIOC_QUERYCAP %s Failed, error: %s", videoPath, strerror(errno));
+                        close(videofd);
+                        continue;
+                    } else {
+                        ALOGE("VIDIOC_QUERYCAP %s cap.bus_info=%s", videoPath, cap.bus_info);
+                    }
+                    char standard_bus_info[kMaxDevicePathLen];
+                    snprintf(standard_bus_info, kMaxDevicePathLen,"%s%s", kCsiPreBusInfo, strCsiNum.c_str());
+                    char cur_bus_info[kMaxDevicePathLen];
+                    snprintf(cur_bus_info, 32,"%s",cap.bus_info);
+                    if (strcmp(standard_bus_info, cur_bus_info) == 0) {
+                        if (strMinVideoPath.compare(videoPath) > 0) {
+                            strMinVideoPath = videoPath;
+                            tempVideoFd = videofd;
+                        }
+                    } else {
+                        close(videofd);
+                    }
+                }
+            }
+        }
+        if (tempVideoFd > -1) {
+            mHinDevHandle = tempVideoFd;
+            ALOGE("min %s", strMinVideoPath.c_str());
         }
     }
     closedir(devdir);
-    if (mHinDevHandle < 0){
-    	DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
-    	return -1;
-    }
-    mV4l2Event->initialize(mHinDevHandle);
-    if (get_format(0, initWidth, initHeight, initFormat) == 0)
-    {
-        DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
-        close(mHinDevHandle);
+    if (mHinDevHandle < 0) {
+        DEBUG_PRINT(3, "[%s %d] mHinDevHandle:%x mHinDevEventHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle, mHinDevEventHandle);
         return -1;
     }
+    mV4l2Event->initialize(mHinDevEventHandle);
+    if (mHinDevHandle == mHinDevEventHandle) {
+        if (get_format(0, initWidth, initHeight, initFormat) == 0) {
+            DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
+            close(mHinDevHandle);
+            close(mHinDevEventHandle);
+            return -1;
+        }
+    } else {
+        if (get_csi_format(mHinDevEventHandle, initWidth, initHeight, initFormat) == 0) {
+            DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
+            close(mHinDevHandle);
+            close(mHinDevEventHandle);
+            return -1;
+        }
+    }
+
    // mPixelFormat = DEFAULT_TVHAL_STREAM_FORMAT;
 
     mSrcFrameWidth = initWidth;
@@ -418,6 +549,9 @@ HinDevImpl::~HinDevImpl()
         free (mHinNodeInfo);
     if (mHinDevHandle >= 0)
         close(mHinDevHandle);
+    if (mHinDevEventHandle >= 0) {
+        close(mHinDevEventHandle);
+    }
 }
 
 int HinDevImpl::start_device()
@@ -635,6 +769,9 @@ int HinDevImpl::stop()
 
     if (mHinDevHandle >= 0)
         close(mHinDevHandle);
+    if (mHinDevEventHandle >=0) {
+        close(mHinDevEventHandle);
+    }
 
     mFirstRequestCapture = true;
     mRequestCaptureCount = 0;
@@ -664,6 +801,33 @@ int HinDevImpl::set_data_callback(V4L2EventCallBack callback)
     }
     mV4l2Event->RegisterEventvCallBack(callback);
     return NO_ERROR;
+}
+
+int HinDevImpl::get_csi_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat)
+{
+    struct v4l2_subdev_format format;
+    CLEAR(format);
+    format.pad = 0;
+    format.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+    int err = ioctl(fd, VIDIOC_SUBDEV_G_FMT, &format);
+    if (err < 0) {
+        ALOGE("[%s %d] failed, VIDIOC_SUBDEV_G_FMT %d, %s", __FUNCTION__, __LINE__, err, strerror(err));
+    } else {
+        hdmi_in_width = format.format.width;
+        hdmi_in_height = format.format.height;
+        if (format.format.code == MEDIA_BUS_FMT_UYVY8_2X8) {
+            mPixelFormat = V4L2_PIX_FMT_NV16;
+        } else if (format.format.code == MEDIA_BUS_FMT_RGB888_1X24) {
+            mPixelFormat = V4L2_PIX_FMT_BGR24;
+        } else {
+            mPixelFormat = format.format.code;
+        }
+        ALOGE("VIDIOC_SUBDEV_G_FMT: pad: %d, which: %d, %dX%d, format: 0x%x, field: %d, color space: %d",
+            format.pad, format.which, hdmi_in_width, hdmi_in_height, mPixelFormat,
+            format.format.field, format.format.colorspace);
+    }
+    if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
+    return -1;
 }
 
 int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat)
@@ -739,7 +903,7 @@ int HinDevImpl::get_HdmiIn(bool enforce){
     struct v4l2_control control;
     memset(&control, 0, sizeof(struct v4l2_control));
     control.id = V4L2_CID_DV_RX_POWER_PRESENT;
-    int err = ioctl(mHinDevHandle, VIDIOC_G_CTRL, &control);
+    int err = ioctl(mHinDevEventHandle, VIDIOC_G_CTRL, &control);
     if (err < 0) {
         ALOGE("Set POWER_PRESENT failed ,%d(%s)", errno, strerror(errno));
         return UNKNOWN_ERROR;

@@ -271,7 +271,7 @@ static int tv_input_get_stream_configurations(
         mconfig[1].buffCount = APP_PREVIEW_BUFF_CNT;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
-        ALOGE("config %d ,%d,0x%x,0x%x!", s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
+        ALOGE("config device_id=%d, %d ,%d,0x%x,0x%x!", device_id, s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,DEFAULT_V4L2_STREAM_FORMAT);
         break;
     default:
         break;
@@ -380,7 +380,8 @@ static int tv_input_set_preview_info(int32_t deviceId, int32_t streamId,
 {
     ALOGD("%s device id %d,called,%p", __func__,deviceId,s_TvInputPriv->mDev);
     if (s_TvInputPriv && s_TvInputPriv->mDev && !s_TvInputPriv->isInitialized) {
-        if (s_TvInputPriv->mDev->init(deviceId, extInfo)!= 0) {
+        if (s_TvInputPriv->mDev->init(deviceId, extInfo,
+                s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat)!= 0) {
             ALOGE("hinDevImpl->init %d failed!", deviceId);
             return -1;
         }
