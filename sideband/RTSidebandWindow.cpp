@@ -38,11 +38,9 @@ RTSidebandWindow::RTSidebandWindow()
           mVopRender(NULL),
           mThreadRunning(false),
           mMessageQueue("RenderThread", static_cast<int>(MESSAGE_ID_MAX)),
-          mMessageThread(nullptr) {
+          mMessageThread(nullptr),
+          mDebugLevel(0) {
     memset(&mSidebandInfo, 0, sizeof(mSidebandInfo));
-    char prop_value[PROPERTY_VALUE_MAX] = {0};
-    property_get("DEBUG_LEVEL_PROPNAME", prop_value, "0");
-    mDebugLevel = (int)atoi(prop_value);
 }
 
 RTSidebandWindow::~RTSidebandWindow() {

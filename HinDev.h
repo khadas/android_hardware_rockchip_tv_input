@@ -284,7 +284,6 @@ class HinDevImpl {
         bool mOpen;
         int mDebugLevel;
         int mSkipFrame;
-        bool mDumpType;
         int mShowFps;
         int mDumpFrameCount;
         void *mUser;

@@ -284,16 +284,8 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
     ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->stream_id, stream->type);
     if (s_TvInputPriv) {
         if (s_TvInputPriv->mDev && s_TvInputPriv->isInitialized) {
-            int width = 0, height = 0;
-            char prop_value[PROPERTY_VALUE_MAX] = {0};
-            property_get(TV_INPUT_USER_FORMAT, prop_value, "default");
-            if (strcmp(prop_value, "default") != 0) {
-                sscanf(prop_value, "%dx%d", &width, &height);
-                DEBUG_PRINT(1, "user format = %s, width=%d, height=%d\n", prop_value, width, height);
-            } else {
-                width = s_HinDevStreamWidth;
-                height = s_HinDevStreamHeight;
-            }
+            int width = s_HinDevStreamWidth;
+            int height = s_HinDevStreamHeight;
             requestInfo.streamId = stream->stream_id;
 
             if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))

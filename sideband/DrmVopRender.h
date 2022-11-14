@@ -120,10 +120,11 @@ private:
         drmModeCrtcPtr crtc;
 
         drmModeObjectPropertiesPtr props;
+        char connector_name[255];
 
         char crtc_plane_mask[255];
         int plane_id = -1;
-        int crtc_id = -1;
+        //int crtc_id = -1;
     } DrmModeInfo_t;
 
     struct DrmOutput {
@@ -148,8 +149,9 @@ private:
 
     typedef struct DisplayInfo {
         int display_id = -1;
-        //int crtc_id = -1;
-        bool connected;
+        int crtc_id = -1;
+        char connector_name[255];
+        bool connected = false;
     } DisplayInfo_t;
 
     Mutex mVopPlaneLock;
@@ -160,6 +162,7 @@ private:
    // Mutex mLock;
     const gralloc_module_t *gralloc_;
     int mDebugLevel = 0;
+    bool mEnableOverScan = false;
 };
 
 } // namespace android

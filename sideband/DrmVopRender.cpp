@@ -138,7 +138,7 @@ bool DrmVopRender::detect(int device)
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     for (int i=0; i< MAX_DISPLAY_NUM; i++) {
         sprintf(prop_name, "vendor.hwc.device.display-%d", i);
-        property_get(prop_name, prop_value, "0");
+        property_get(prop_name, prop_value, "0:0:0");
         ALOGE("%s=%s", prop_name, prop_value);
         /*if (strcmp(prop_value, "0") == 0) {
             break;
@@ -149,10 +149,41 @@ bool DrmVopRender::detect(int device)
             memset(&info, 0, sizeof(info));
             info.display_id = i;
             info.connected = connected;
-            ALOGE("==========push display info %d==================", i);
+            if (mEnableOverScan) {
+                char *saveptr;
+                int num_tokens = 0;
+                char* token = strtok_r(prop_value, ":", &saveptr);
+                while (token != NULL){
+                    if (num_tokens == 0) {
+                        strcpy(info.connector_name, token);
+                    } else if (num_tokens == 1) {
+                        info.crtc_id = (int)atoi(token);
+                    }
+                    num_tokens++;
+                    token = strtok_r(NULL, ":", &saveptr);
+                }
+                saveptr = NULL;
+            }
+            ALOGE("=====push display info %d %d %s=====", i, info.crtc_id, info.connector_name);
             mDisplayInfos.push_back(info);
         } else {
             mDisplayInfos[i].connected = connected;
+            if (mEnableOverScan && mDisplayInfos[i].crtc_id == 0 && strcmp(prop_value, "0:0:0") != 0) {
+                char *saveptr;
+                int num_tokens = 0;
+                char* token = strtok_r(prop_value, ":", &saveptr);
+                while (token != NULL) {
+                    if (num_tokens == 0) {
+                        strcpy(mDisplayInfos[i].connector_name, token);
+                    } else if (num_tokens == 1) {
+                        mDisplayInfos[i].crtc_id = (int)atoi(token);
+                    }
+                    num_tokens++;
+                    token = strtok_r(NULL, ":", &saveptr);
+                }
+                saveptr = NULL;
+                ALOGE("=====update display info %d %d %s=====", i, mDisplayInfos[i].crtc_id, mDisplayInfos[i].connector_name);
+            }
         }
     }
 
@@ -204,6 +235,7 @@ bool DrmVopRender::detect(int device)
         }
 
         DrmModeInfo drmModeInfo;
+        memset(&drmModeInfo, 0, sizeof(drmModeInfo));
         drmModeInfo.connector = connector;
         output->connected = true;
         ALOGD("connector %d connected",outputIndex);
@@ -339,11 +371,17 @@ bool DrmVopRender::detect(int device)
                }
                 if (last_crtc_id == crtc_id) {
                     ALOGE("same crtc_id need reconnect");
-                    for (int i=0; i<mDisplayInfos.size(); i++) {
-                        mDisplayInfos[i].connected = false;
+                    for (int j =0; j < mDisplayInfos.size(); j++) {
+                        mDisplayInfos[j].connected = false;
                     }
                 } else {
                     last_crtc_id = crtc_id;
+                    for (int j = 0; j < mDisplayInfos.size(); j++) {
+                        if (crtc_id == mDisplayInfos[j].crtc_id) {
+                            strcpy(output->mDrmModeInfos[i].connector_name, mDisplayInfos[j].connector_name);
+                            ALOGE("index=%d, %d %s", i, crtc_id, output->mDrmModeInfos[i].connector_name);
+                        }
+                    }
                 }
             }
         }
@@ -709,6 +747,27 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
             DrmModeInfo_t drmModeInfo = output->mDrmModeInfos[i];
             int plane_id = drmModeInfo.plane_id;
             if (plane_id > 0) {
+                int overscan[] = {100, 100, 100, 100};
+                if (mEnableOverScan) {
+                    int connector_name_len = strlen(drmModeInfo.connector_name);
+                    if (connector_name_len > 0) {
+                        char overscan_prop[PROPERTY_VALUE_MAX] = {0};
+                        char overscan_name[PROPERTY_VALUE_MAX] = {0};
+                        std::string temp1(drmModeInfo.connector_name, connector_name_len - 1);
+                        std::string temp2(1, drmModeInfo.connector_name[connector_name_len - 1]);
+                        sprintf(overscan_name, "%s%s%d", TV_INPUT_OVERSCAN_PREF, temp1.c_str(), atoi(temp2.c_str()) - 1);
+                        property_get(overscan_name, overscan_prop, "0");
+                        if (strcmp(overscan_prop, "0") != 0) {
+                            const char split[] = ",";
+                            char* res = strtok(overscan_prop + 8, split);
+                            int overscan_index = 0;
+                            while (res != NULL) {
+                                overscan[overscan_index++] = (int)atoi(res);
+                                res = strtok(NULL, split);
+                            }
+                        }
+                    }
+                }
                 dst_w = drmModeInfo.crtc->width;
                 dst_h = drmModeInfo.crtc->height;
                 int ratio_w = dst_w;
@@ -729,15 +788,28 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
                 if (dst_w < ratio_w) {
                     ratio_w = dst_w;
                 }
+                int offset_l = 0;
+                int offset_t = 0;
+                int offset_r = 0;
+                int offset_b = 0;
+                if (mEnableOverScan) {
+                    offset_l = dst_w * (100 - overscan[0]) / 200;
+                    offset_t = dst_h * (100 - overscan[1]) / 200;
+                    offset_r = dst_w * (100 - overscan[2]) / 200;
+                    offset_b = dst_h * (100 - overscan[3]) / 200;
+                }
+                int32_t crtc_x = dst_left + (dst_w - ratio_w) / 2 + offset_l;
+                int32_t crtc_y = dst_top + (dst_h - ratio_h) / 2 + offset_t;
+                uint32_t crtc_w = ALIGN_DOWN(ratio_w - offset_l - offset_r, 2);
+                uint32_t crtc_h = ALIGN_DOWN(ratio_h - offset_t - offset_b, 2);
                 ret = drmModeSetPlane(mDrmFd, plane_id,
-                          drmModeInfo.crtc->crtc_id, fb_id, flags,
-                          dst_left+(dst_w-ratio_w)/2, dst_top+(dst_h - ratio_h)/2,
-                          ratio_w, ratio_h,
-                          0, 0,
-                          src_w << 16, src_h << 16);
+                    drmModeInfo.crtc->crtc_id, fb_id, flags,
+                    crtc_x, crtc_y, crtc_w, crtc_h,
+                    0, 0,
+                    src_w << 16, src_h << 16);
                 if (mDebugLevel == 3) {
-                    ALOGD("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d",
-                        strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h);
+                    ALOGE("drmModeSetPlane ret=%s mDrmFd=%d plane_id=%d, crtc_id=%d, fb_id=%d, flags=%d, %d %d, %d %d %d %d",
+                        strerror(ret), mDrmFd, plane_id, drmModeInfo.crtc->crtc_id, fb_id, flags, dst_w, dst_h, crtc_x, crtc_y, crtc_w, crtc_h);
                 }
             }
         }

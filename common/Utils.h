@@ -74,22 +74,21 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
     RK_GRALLOC_USAGE_WITHIN_4G | RK_GRALLOC_USAGE_PHY_CONTIG_BUFFER
 );
 
-#define TV_INPUT_USER_FORMAT "vendor.tvinput.format"
 #define TV_INPUT_SKIP_FRAME "persist.vendor.tvinput.skipframe"
-#define TV_INPUT_DUMP_TYPE "vendor.tvinput.dumptype"
-#define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
-#define TV_INPUT_HAS_ENCODE "vendor.tvinput.encode"
-#define TV_INPUT_DISPLAY_RATIO "vendor.tvinput.displayratio"
 #define TV_INPUT_PQ_ENABLE "persist.vendor.rkpq.enable"
 #define TV_INPUT_PQ_MODE "persist.vendor.pq.mode"
 #define TV_INPUT_PQ_RANGE "persist.vendor.cts.hdmi.range"
 #define TV_INPUT_PQ_LUMA "persist.vendor.rkpq.luma"
 #define TV_INPUT_HDMIIN "vendor.rk.hdmiin"
+
 #define TV_INPUT_RESOLUTION_MAIN "persist.vendor.resolution.main"
-#define DEBUG_LEVEL_PROPNAME "vendor.tvinput.level"
-#define DEBUG_HDMIIN_LEVEL "vendor.hdmiin.debug.level"
-#define DEBUG_HDMIIN_DUMP "vendor.hdmiin.debug.dump"
-#define DEBUG_HDMIIN_DUMPNUM "vendor.hdmiin.debug.dumpnum"
+#define TV_INPUT_OVERSCAN_PREF "persist.vendor.overscan."
+
+#define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
+#define TV_INPUT_DISPLAY_RATIO "vendor.tvinput.displayratio"
+#define TV_INPUT_DEBUG_LEVEL "vendor.tvinput.debug.level"
+#define TV_INPUT_DEBUG_DUMP "vendor.tvinput.debug.dump"
+#define TV_INPUT_DEBUG_DUMPNUM "vendor.tvinput.debug.dumpnum"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \
     do {                                                      \

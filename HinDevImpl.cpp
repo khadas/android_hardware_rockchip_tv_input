@@ -203,32 +203,22 @@ HinDevImpl::HinDevImpl()
     : mHinDevHandle(-1),
                     mHinNodeInfo(NULL),
                     mSidebandHandle(NULL),
-                    mDumpType(0),
                     mDumpFrameCount(30),
                     mFirstRequestCapture(true),
                     mPqMode(0),
                     mUseZme(false)
 {
     char prop_value[PROPERTY_VALUE_MAX] = {0};
-    property_get(DEBUG_LEVEL_PROPNAME, prop_value, "0");
+    property_get(TV_INPUT_DEBUG_LEVEL, prop_value, "0");
     mDebugLevel = (int)atoi(prop_value);
 
-    //property_get(TV_INPUT_SKIP_FRAME, prop_value, "0");
-    //mSkipFrame = (int)atoi(prop_value);
-    property_get(DEBUG_HDMIIN_DUMP, prop_value, "0");
+    property_get(TV_INPUT_DEBUG_DUMP, prop_value, "0");
     mEnableDump = (int)atoi(prop_value);
-
-    property_get(TV_INPUT_DUMP_TYPE, prop_value, "0");
-    mDumpType = (int)atoi(prop_value);
-    if (mDumpType == 1)
-        mDumpFrameCount = 3;
 
     property_get(TV_INPUT_SHOW_FPS, prop_value, "0");
     mShowFps = (int)atoi(prop_value);
 
-    property_get(TV_INPUT_HAS_ENCODE, prop_value, "0");
-    //mHasEncode = (int)atoi(prop_value);
-    DEBUG_PRINT(1, "prop value : mDebugLevel=%d, mSkipFrame=%d, mDumpType=%d", mDebugLevel, mSkipFrame, mDumpType);
+    DEBUG_PRINT(1, "prop value : mDebugLevel=%d, mSkipFrame=%d", mDebugLevel, mSkipFrame);
     mV4l2Event = new V4L2DeviceEvent();
     mSidebandWindow = new RTSidebandWindow();
 }
@@ -1573,8 +1563,8 @@ int HinDevImpl::workThread()
             return 0;
         } else {
             if (mDebugLevel == 3) {
-                ALOGE("VIDIOC_DQBUF successful.mDumpType=%d,mDumpFrameCount=%d, tid=%lu, currBufferHandleIndex=%d, fd=%d",
-                    mDumpType,mDumpFrameCount, tid, mHinNodeInfo->currBufferHandleIndex, mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd);
+                ALOGE("VIDIOC_DQBUF successful.mEnableDump=%d,mDumpFrameCount=%d, tid=%lu, currBufferHandleIndex=%d, fd=%d",
+                    mEnableDump,mDumpFrameCount, tid, mHinNodeInfo->currBufferHandleIndex, mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd);
             }
         }
         if (mState != START) {
@@ -1583,14 +1573,9 @@ int HinDevImpl::workThread()
         }
 
         if (mEnableDump == 1) {
-            if (mDumpType == 0 && mDumpFrameCount > 0) {
+            if (mDumpFrameCount > 0) {
                 char fileName[128] = {0};
                 sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d_%d.yuv", mSrcFrameWidth, mSrcFrameHeight, mDumpFrameCount);
-                mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
-                mDumpFrameCount--;
-            } else if (mDumpType == 1 && mDumpFrameCount > 0) {
-                char fileName[128] = {0};
-                sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d.h264", mSrcFrameWidth, mSrcFrameHeight);
                 mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
                 mDumpFrameCount--;
             }
@@ -1744,12 +1729,12 @@ int HinDevImpl::pqBufferThread() {
     }
 
     char debugInfoValue[PROPERTY_VALUE_MAX] = {0};
-    property_get(DEBUG_HDMIIN_LEVEL, debugInfoValue, "0");
+    property_get(TV_INPUT_DEBUG_LEVEL, debugInfoValue, "0");
     mDebugLevel = (int)atoi(debugInfoValue);
-    property_get(DEBUG_HDMIIN_DUMP, debugInfoValue, "0");
+    property_get(TV_INPUT_DEBUG_DUMP, debugInfoValue, "0");
     mEnableDump = (int)atoi(debugInfoValue);
     if (mEnableDump == 1) {
-        property_get(DEBUG_HDMIIN_DUMPNUM, debugInfoValue, "0");
+        property_get(TV_INPUT_DEBUG_DUMPNUM, debugInfoValue, "0");
         int dumpFrameCount = (int)atoi(debugInfoValue);
         if (dumpFrameCount > 0) {
             mDumpFrameCount = dumpFrameCount;
