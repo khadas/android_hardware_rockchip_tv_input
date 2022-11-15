@@ -1318,7 +1318,7 @@ void HinDevImpl::wrapCaptureResultAndNotify(uint64_t buffId,buffer_handle_t hand
         return;
     }*/
     tv_input_capture_result_t result;
-    result.buff_id = buffId;
+    //result.buff_id = buffId;
     //ALOGD("%s %lld,end.", __FUNCTION__,(long long)buffId);
     // result.buffer = handle;  //if need
     if(mNotifyQueueCb != NULL)

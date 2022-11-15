@@ -49,7 +49,7 @@ typedef struct tv_input_private {
     tv_input_device_t device;
 
     // Callback related data
-    const tv_input_callback_ops_t* callback;
+    const tv_input_callback_ops_ext_t* callback;
     HinDevImpl* mDev;
     int mStreamType;
     bool isOpened;
@@ -98,7 +98,7 @@ tv_input_module_t HAL_MODULE_INFO_SYM = {
 V4L2EventCallBack hinDevEventCallback(int event_type) {
     ALOGD("%s event type: %d", __FUNCTION__,event_type);
     bool isHdmiIn;
-    tv_input_event_t event;
+    tv_input_event_ext_t event;
     if (s_TvInputPriv && !s_TvInputPriv->isOpened) {
        ALOGE("%s The device is not open ", __FUNCTION__);
        return 0;
@@ -115,7 +115,7 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
             if (s_TvInputPriv->mDev) {
             std::map<std::string, std::string> data;
             s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
-            event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
+            event.base_event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
             event.priv_app_cmd.action = "hdmiinout";
             }
         }
@@ -124,24 +124,24 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
              isHdmiIn = s_TvInputPriv->mDev->get_current_sourcesize(s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat);
              s_HinDevStreamInterlaced = s_TvInputPriv->mDev->check_interlaced();
              ALOGD("s_HinDevStreamInterlaced %d ", s_HinDevStreamInterlaced);
-             event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
+             event.base_event.type = TV_INPUT_EVENT_STREAM_CONFIGURATIONS_CHANGED;
              break;
         case RK_HDMIRX_V4L2_EVENT_SIGNAL_LOST:
              if (s_TvInputPriv->mDev) {
              std::map<std::string, std::string> data;
              s_TvInputPriv->mDev->deal_priv_message("hdmiinout", data);
-             event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
+             event.base_event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
              event.priv_app_cmd.action = "hdmiinout";
              }
              break;
     }
     ALOGE("%s width:%d,height:%d,format:0x%x,%d", __FUNCTION__,s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,isHdmiIn);
-    event.device_info.device_id = SOURCE_HDMI1;
-    event.device_info.type = TV_INPUT_TYPE_HDMI;
-    event.device_info.audio_type = AUDIO_DEVICE_NONE;
-    event.device_info.audio_address = NULL;
-    if(event.type > 0)
-      s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
+    event.base_event.device_info.device_id = SOURCE_HDMI1;
+    event.base_event.device_info.type = TV_INPUT_TYPE_HDMI;
+    event.base_event.device_info.audio_type = AUDIO_DEVICE_NONE;
+    event.base_event.device_info.audio_address = NULL;
+    if(event.base_event.type > 0)
+      s_TvInputPriv->callback->notify_ext(nullptr, &event, nullptr);
     return 0;
 }
 
@@ -193,20 +193,20 @@ static int hin_dev_open(int deviceId, int type)
 }
 /*****************************************************************************/
 static int generateEvent(tv_input_private_t *priv, tv_input_source_t source_type, int event_type) {
-    tv_input_event_t event;
-    event.device_info.device_id = source_type;
-    event.device_info.audio_type = AUDIO_DEVICE_NONE;
-    event.device_info.audio_address = NULL;
-    event.type = event_type;
+    tv_input_event_ext_t event;
+    event.base_event.device_info.device_id = source_type;
+    event.base_event.device_info.audio_type = AUDIO_DEVICE_NONE;
+    event.base_event.device_info.audio_address = NULL;
+    event.base_event.type = event_type;
     switch (source_type) {
         case SOURCE_HDMI1:
         case SOURCE_HDMI2:
-            event.device_info.type = TV_INPUT_TYPE_HDMI;
-            event.device_info.hdmi.port_id = getHdmiPortID(source_type);
+            event.base_event.device_info.type = TV_INPUT_TYPE_HDMI;
+            event.base_event.device_info.hdmi.port_id = getHdmiPortID(source_type);
             break;
         case SOURCE_TV:
         case SOURCE_DTV:
-            event.device_info.type = TV_INPUT_TYPE_TUNER;
+            event.base_event.device_info.type = TV_INPUT_TYPE_TUNER;
             break;
         default:
             break;
@@ -214,7 +214,7 @@ static int generateEvent(tv_input_private_t *priv, tv_input_source_t source_type
     static int connection_status = 1;
     //priv->callback->notify(&priv->device, &event, priv->callback_data);
     // TODO: data --> connection status
-    priv->callback->notify(&priv->device, &event, &connection_status);
+    priv->callback->notify_ext(&priv->device, &event, &connection_status);
     return 0;
 }
 
@@ -230,11 +230,11 @@ void findTvDevices(tv_input_private_t *priv) {
 }
 
 #define NUM_OF_CONFIGS_DEFAULT 2
-static tv_stream_config_t mconfig[NUM_OF_CONFIGS_DEFAULT];
+static tv_stream_config_ext mconfig[NUM_OF_CONFIGS_DEFAULT];
 static native_handle_t* out_buffer;
 
-static int tv_input_get_stream_configurations(
-        const struct tv_input_device *dev, int device_id, int *num_of_configs, const tv_stream_config_t **configs)
+static int tv_input_get_stream_configurations_ext(
+        const struct tv_input_device *dev, int device_id, int *num_of_configs, const tv_stream_config_ext **configs)
 {
     ALOGD("%s called device_id=%d,s_TvInputPriv=%p", __func__, device_id,s_TvInputPriv);
     UNUSED(dev);
@@ -250,20 +250,20 @@ static int tv_input_get_stream_configurations(
     case SOURCE_DTV:
     case SOURCE_HDMI1:
     case SOURCE_HDMI2:
-        mconfig[0].stream_id = STREAM_ID_GENERIC;
-        mconfig[0].type = TV_STREAM_TYPE_BUFFER_PRODUCER;
-        mconfig[0].max_video_width = s_HinDevStreamWidth;
-        mconfig[0].max_video_height = s_HinDevStreamHeight;
+        mconfig[0].base_config.stream_id = STREAM_ID_GENERIC;
+        mconfig[0].base_config.type = TV_STREAM_TYPE_BUFFER_PRODUCER;
+        mconfig[0].base_config.max_video_width = s_HinDevStreamWidth;
+        mconfig[0].base_config.max_video_height = s_HinDevStreamHeight;
         mconfig[0].format = s_HinDevStreamFormat;//DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[0].width = s_HinDevStreamWidth;
         mconfig[0].height = s_HinDevStreamHeight;
         mconfig[0].usage = STREAM_BUFFER_GRALLOC_USAGE;
         mconfig[0].buffCount = APP_PREVIEW_BUFF_CNT;
 
-        mconfig[1].stream_id = STREAM_ID_FRAME_CAPTURE;
-        mconfig[1].type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-        mconfig[1].max_video_width = s_HinDevStreamWidth;
-        mconfig[1].max_video_height = s_HinDevStreamHeight;
+        mconfig[1].base_config.stream_id = STREAM_ID_FRAME_CAPTURE;
+        mconfig[1].base_config.type = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
+        mconfig[1].base_config.max_video_width = s_HinDevStreamWidth;
+        mconfig[1].base_config.max_video_height = s_HinDevStreamHeight;
         mconfig[1].format = s_HinDevStreamFormat;//DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[1].width = s_HinDevStreamWidth;
         mconfig[1].height = s_HinDevStreamWidth;
@@ -331,7 +331,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 }
 
 NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
-    ALOGV("%s req:%u ,%u in result.buff_id=%" PRIu64, __FUNCTION__,requestInfo.seq,result.seq, result.buff_id);
+    /*ALOGV("%s req:%u ,%u in result.buff_id=%" PRIu64, __FUNCTION__,requestInfo.seq,result.seq, result.buff_id);
     tv_input_event_t event;
     event.capture_result.device_id = requestInfo.deviceId;
     event.capture_result.stream_id = requestInfo.streamId;
@@ -343,7 +343,7 @@ NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
     } else {
         event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
     }
-    s_TvInputPriv->callback->notify(nullptr, &event, nullptr);
+    s_TvInputPriv->callback->notify(nullptr, &event, nullptr);*/
     return 0;
 }
 
@@ -356,7 +356,7 @@ static int tv_input_priv_cmd_from_app(const std::string action, const std::map<s
     return -EINVAL;
 }
 
-static int tv_input_request_capture(struct tv_input_device* dev, int device_id,
+static int tv_input_request_capture_ext(struct tv_input_device* dev, int device_id,
             int stream_id, uint64_t buff_id, buffer_handle_t buffer, uint32_t seq) {
     ALOGV("%s called,req=%u", __func__,seq);
     if (s_TvInputPriv && s_TvInputPriv->isInitialized && s_TvInputPriv->mDev && buffer != nullptr) {
@@ -423,8 +423,8 @@ static int tv_input_device_close(struct hw_device_t *dev)
     return 0;
 }
 
-static int tv_input_initialize(struct tv_input_device* dev,
-        const tv_input_callback_ops_t* callback, void* data)
+static int tv_input_initialize_ext(struct tv_input_device* dev,
+        const tv_input_callback_ops_ext_t* callback, void* data)
 {
     ALOGD("%s called", __func__);
     if (dev == NULL || callback == NULL) {
@@ -439,6 +439,30 @@ static int tv_input_initialize(struct tv_input_device* dev,
     
     findTvDevices(s_TvInputPriv);
     return 0;
+}
+
+static int tv_input_initialize(struct tv_input_device* dev,
+        const tv_input_callback_ops_t* callback, void* data)
+{
+    return -EINVAL;
+}
+
+static int tv_input_request_capture(
+        struct tv_input_device*, int device_id, int stream_id, buffer_handle_t, uint32_t)
+{
+    return -EINVAL;
+}
+
+static int tv_input_get_stream_configurations(
+        const struct tv_input_device*, int, int*, const tv_stream_config_t**)
+{
+    return -EINVAL;
+}
+
+static int tv_input_set_placeholder(
+        int32_t device_id)
+{
+    return -EINVAL;
 }
 
 /*****************************************************************************/
@@ -471,6 +495,11 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->device.priv_cmd_from_app = tv_input_priv_cmd_from_app;
         dev->device.request_capture = tv_input_request_capture;
         dev->device.cancel_capture = tv_input_cancel_capture;
+
+        dev->device.initialize_ext = tv_input_initialize_ext;
+        dev->device.request_capture_ext = tv_input_request_capture_ext;
+        dev->device.get_stream_configurations_ext = tv_input_get_stream_configurations_ext;
+        dev->device.set_placeholder = tv_input_set_placeholder;
 
         *device = &dev->device.common;
         status = 0;
