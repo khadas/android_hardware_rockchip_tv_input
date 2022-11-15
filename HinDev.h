@@ -185,6 +185,7 @@ class HinDevImpl {
         void stopRecord();
         void buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int srcWidth, int srcHeight,
             buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride);
+        int get_extfmt_info();
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;

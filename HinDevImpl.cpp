@@ -566,6 +566,7 @@ int HinDevImpl::start_device()
 
     DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
 
+    ret = get_extfmt_info();
     ret = ioctl(mHinDevHandle, VIDIOC_QUERYCAP, &mHinNodeInfo->cap);
     if (ret < 0) {
         DEBUG_PRINT(3, "VIDIOC_QUERYCAP Failed, error: %s", strerror(errno));
@@ -871,7 +872,12 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
         DEBUG_PRINT(3, "after %s get from v4l2 format.fmt.pix.pixelformat =%d", __FUNCTION__, format.fmt.pix.pixelformat);
     }
 
-    err = ioctl(mHinDevHandle, RK_HDMIRX_CMD_GET_FPS, &mFrameFps);
+    if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
+    return -1;
+}
+
+int HinDevImpl::get_extfmt_info() {
+    int err = ioctl(mHinDevHandle, RK_HDMIRX_CMD_GET_FPS, &mFrameFps);
     if (err < 0) {
         DEBUG_PRINT(3, "[%s %d] failed, RK_HDMIRX_CMD_GET_FPS %d, %s", __FUNCTION__, __LINE__, err, strerror(err));
         mFrameFps = 60;
@@ -894,10 +900,9 @@ int HinDevImpl::get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& 
     } else {
         DEBUG_PRINT(3, "[%s %d] RK_HDMIRX_CMD_GET_COLOR_SPACE %d", __FUNCTION__, __LINE__, mFrameColorSpace);
     }
-
-    if(hdmi_in_width == 0 || hdmi_in_height == 0) return 0;
-    return -1;
+    return err;
 }
+
 int HinDevImpl::get_HdmiIn(bool enforce){
     if(enforce && mIsHdmiIn) return mIsHdmiIn;
     struct v4l2_control control;
