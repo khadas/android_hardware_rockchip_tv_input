@@ -75,11 +75,11 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 );
 
 #define TV_INPUT_SKIP_FRAME "persist.vendor.tvinput.skipframe"
-#define TV_INPUT_PQ_ENABLE "persist.vendor.rkpq.enable"
-#define TV_INPUT_PQ_MODE "persist.vendor.pq.mode"
-#define TV_INPUT_PQ_RANGE "persist.vendor.cts.hdmi.range"
-#define TV_INPUT_PQ_LUMA "persist.vendor.rkpq.luma"
-#define TV_INPUT_HDMIIN "vendor.rk.hdmiin"
+#define TV_INPUT_PQ_ENABLE "persist.vendor.tvinput.rkpq.enable"
+#define TV_INPUT_PQ_MODE "persist.vendor.tvinput.rkpq.mode"
+#define TV_INPUT_PQ_RANGE "persist.vendor.tvinput.rkpq.range"
+#define TV_INPUT_PQ_LUMA "persist.vendor.tvinput.rkpq.luma"
+#define TV_INPUT_HDMIIN "vendor.tvinput.rk.hdmiin"
 
 #define TV_INPUT_RESOLUTION_MAIN "persist.vendor.resolution.main"
 #define TV_INPUT_OVERSCAN_PREF "persist.vendor.overscan."
