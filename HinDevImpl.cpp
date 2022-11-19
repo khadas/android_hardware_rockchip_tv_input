@@ -1859,6 +1859,8 @@ int HinDevImpl::workThread()
         }
         debugShowFPS();
         mHinNodeInfo->currBufferHandleIndex++;
+    } else {
+        usleep(500);
     }
     return NO_ERROR;
 }
