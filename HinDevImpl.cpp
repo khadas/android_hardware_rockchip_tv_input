@@ -765,8 +765,10 @@ int HinDevImpl::stop()
     if (mHinNodeInfo)
         free(mHinNodeInfo);
 
-    if (mV4l2Event)
+    if (mV4l2Event) {
         mV4l2Event->closePipe();
+        mV4l2Event->closeEventThread();
+    }
 
     if (mHinDevHandle >= 0)
         close(mHinDevHandle);
