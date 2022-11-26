@@ -466,7 +466,12 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
                     if (strcmp(standard_bus_info, cur_bus_info) == 0) {
                         if (strMinVideoPath.compare(videoPath) > 0) {
                             strMinVideoPath = videoPath;
+                            if (tempVideoFd > -1) {
+                                close(tempVideoFd);
+                            }
                             tempVideoFd = videofd;
+                        } else {
+                            close(videofd);
                         }
                     } else {
                         close(videofd);
