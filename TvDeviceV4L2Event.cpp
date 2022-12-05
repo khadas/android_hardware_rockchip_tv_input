@@ -37,7 +37,6 @@ int V4L2DeviceEvent::initialize(int fd){
     return 0;
 }
 void V4L2DeviceEvent::closeEventThread() {
-    ALOGW("@%s", __FUNCTION__);
     if (mV4L2EventThread) {
         mV4L2EventThread->requestExit();
         mV4L2EventThread->join();
@@ -46,7 +45,6 @@ void V4L2DeviceEvent::closeEventThread() {
 }
 
 void V4L2DeviceEvent::closePipe() {
-    ALOGW("@%s", __FUNCTION__);
     if (mV4L2EventThread) {
         mV4L2EventThread->closeDevice();
     }
