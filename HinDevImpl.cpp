@@ -312,6 +312,9 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
         info.usage |= GRALLOC_USAGE_HW_COMPOSER
             | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
+        if (mHdmiInType == 1) {
+            info.usage |= RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64;
+        }
         mPqIniting = false;
         mFirstRequestCapture = false;
         mRequestCaptureCount = 1;
@@ -823,7 +826,7 @@ int HinDevImpl::get_csi_format(int fd, int &hdmi_in_width, int &hdmi_in_height,i
         hdmi_in_height = format.format.height;
         if (format.format.code == MEDIA_BUS_FMT_UYVY8_2X8) {
             mPixelFormat = V4L2_PIX_FMT_NV16;
-        } else if (format.format.code == MEDIA_BUS_FMT_RGB888_1X24) {
+        } else if (format.format.code == MEDIA_BUS_FMT_BGR888_1X24) {
             mPixelFormat = V4L2_PIX_FMT_BGR24;
         } else {
             mPixelFormat = format.format.code;
