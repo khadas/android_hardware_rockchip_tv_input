@@ -109,7 +109,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     int buffDataTransfer(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
     int buffDataTransfer2(buffer_handle_t srcHandle, buffer_handle_t dstRawHandle);
     int NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstHandle, int width, int height);
-    status_t show(buffer_handle_t buffer, int displayRadio);
+    status_t show(buffer_handle_t buffer, int displayRadio, int hdmiInType);
     status_t clearVopArea();
     void setDebugLevel(int debugLevel);
 

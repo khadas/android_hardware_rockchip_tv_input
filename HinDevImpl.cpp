@@ -312,7 +312,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
         info.usage |= GRALLOC_USAGE_HW_COMPOSER
             | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
-        if (mHdmiInType == 1) {
+        if (mHdmiInType == HDMIIN_TYPE_MIPICSI) {
             info.usage |= RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64;
         }
         mPqIniting = false;
@@ -345,7 +345,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     struct dirent* de;
     while ((de = readdir(devdir)) != 0) {
         // Find external v4l devices that's existing before we start watching and add them
-        if (mHdmiInType == 0 && !strncmp(kPrefix, de->d_name, kPrefixLen)) {
+        if (mHdmiInType == HDMIIN_TYPE_HDMIRX && !strncmp(kPrefix, de->d_name, kPrefixLen)) {
 		std::string deviceId(de->d_name + kPrefixLen);
 		ALOGD(" v4l device %s found", de->d_name);
 		char v4l2DevicePath[kMaxDevicePathLen];
@@ -394,7 +394,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 			DEBUG_PRINT(3, "isnot hdmirx,VIDIOC_QUERYCAP driver=%s", cap.driver);
 		}
             }
-        } else if (mHdmiInType == 1 && !strncmp(kCsiPrefix, de->d_name, kCsiPrefixLen)) {
+        } else if (mHdmiInType == HDMIIN_TYPE_MIPICSI && !strncmp(kCsiPrefix, de->d_name, kCsiPrefixLen)) {
             ALOGD(" v4l device %s found", de->d_name);
             char v4l2SubDevPath[kMaxDevicePathLen];
             snprintf(v4l2SubDevPath, kMaxDevicePathLen,"%s%s", kDevicePath, de->d_name);
@@ -1636,7 +1636,7 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
             //mSidebandWindow->clearVopArea();
             stopRecord();
             if (mSignalHandle != NULL && mWorkThread != NULL) {
-                mSidebandWindow->show(mSignalHandle, FULL_SCREEN);
+                mSidebandWindow->show(mSignalHandle, FULL_SCREEN, mHdmiInType);
             }
         }
         return 1;
@@ -1796,7 +1796,7 @@ int HinDevImpl::workThread()
                         ALOGE("sidebandwindow show index=%d", currPreviewHandlerIndex);
                     }
                     mSidebandWindow->show(
-                        mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio);
+                        mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio, mHdmiInType);
                 }
             }
 
@@ -1959,7 +1959,7 @@ int HinDevImpl::pqBufferThread() {
                 return NO_ERROR;
             }
             if (showPqFrame) {
-                mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio);
+                mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio, mHdmiInType);
             } else if(mDebugLevel == 3) {
                 ALOGE("pq mSidebandWindow no show, because showPqFrame false");
             }
@@ -2031,7 +2031,7 @@ int HinDevImpl::iepBufferThread() {
                     }
                     return NO_ERROR;
                 }
-                mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio);
+                mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio, mHdmiInType);
                 mIepBufferHandle[curIepOutIndex].isFilled = false;
                 mIepBuffOutIndex ++;
                 if (mIepBuffOutIndex == SIDEBAND_IEP_BUFF_CNT) {

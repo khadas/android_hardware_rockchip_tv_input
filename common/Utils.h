@@ -61,6 +61,11 @@ enum FrameType{
     TYPE_STREAM_BUFFER_PRODUCER = 0x2,
 };
 
+enum HdmiInType{
+    HDMIIN_TYPE_HDMIRX = 0x0,
+    HDMIIN_TYPE_MIPICSI = 0x1,
+};
+
 enum DisplayRatio{
     FULL_SCREEN = 0x0,
     SCREEN_16_9 = 0x1,

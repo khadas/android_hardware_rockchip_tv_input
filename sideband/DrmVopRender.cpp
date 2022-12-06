@@ -531,7 +531,7 @@ int DrmVopRender::getFbLength(buffer_handle_t handle) {
     return tvBufferMgr->GetHandleBufferSize(handle);
 }
 
-int DrmVopRender::getFbid(buffer_handle_t handle) {
+int DrmVopRender::getFbid(buffer_handle_t handle, int hdmiInType) {
     Mutex::Autolock autoLock(mVopPlaneLock);
     if (!handle) {
         ALOGE("%s buffer_handle_t is NULL.", __FUNCTION__);
@@ -561,8 +561,18 @@ int DrmVopRender::getFbid(buffer_handle_t handle) {
         src_h = tvBufferMgr->GetHeight(handle);
         src_format = tvBufferMgr->GetHalPixelFormat(handle);
         plane_size = tvBufferMgr->GetNumPlanes(handle);
-        ALOGV("plane_size = %zu", plane_size);
-        src_stride = (int)tvBufferMgr->GetPlaneStride(handle, 0);
+        ALOGV("format=%d, plane_size = %zu", src_format, plane_size);
+        if (hdmiInType == HDMIIN_TYPE_MIPICSI) {
+            if (src_format == HAL_PIXEL_FORMAT_BGR_888) {
+                src_stride = src_w * 3;
+            } else if (src_format != HAL_PIXEL_FORMAT_YCrCb_NV12_10) {
+                src_stride = src_w;
+            } else {
+                src_stride = (int)tvBufferMgr->GetPlaneStride(handle, 0);
+            }
+        } else {
+            src_stride = (int)tvBufferMgr->GetPlaneStride(handle, 0);
+        }
 
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_WIDTH, handle, &src_w);
         //gralloc_->perform(gralloc_, GRALLOC_MODULE_PERFORM_GET_HADNLE_HEIGHT, handle, &src_h);
@@ -677,7 +687,8 @@ void DrmVopRender::setDebugLevel(int debugLevel) {
     }
 }
 
-bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio) {
+bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height,
+        buffer_handle_t handle, int displayRatio, int hdmiInType) {
     if (mDebugLevel == 3) {
         ALOGE("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
     }
@@ -701,7 +712,7 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height, buffer
 
     int ret = 0;
     bool findAvailedPlane = FindSidebandPlane(device);
-    int fb_id = findAvailedPlane?getFbid(handle):-1;
+    int fb_id = findAvailedPlane?getFbid(handle, hdmiInType):-1;
     int flags = 0;
     int src_left = 0;
     int src_top = 0;

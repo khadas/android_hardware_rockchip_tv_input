@@ -315,6 +315,6 @@ class HinDevImpl {
         bool mPqIniting = false;
         int mLastPqStatus = 0;
         int mEnableDump = 0;
-        int mHdmiInType = 0;//0 hdmirx, 1 mipicsi
+        int mHdmiInType = HDMIIN_TYPE_HDMIRX;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

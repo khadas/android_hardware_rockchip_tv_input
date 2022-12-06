@@ -89,12 +89,13 @@ public:
     bool detect();
     bool detect(int device);
     void DestoryFB();
-    int getFbid(buffer_handle_t handle);
+    int getFbid(buffer_handle_t handle, int hdmiInType);
     int getFbLength(buffer_handle_t handle);
 
     uint32_t ConvertHalFormatToDrm(uint32_t hal_format);
 
-    bool SetDrmPlane(int device, int32_t width, int32_t height, buffer_handle_t handle, int displayRatio);
+    bool SetDrmPlane(int device, int32_t width, int32_t height,
+        buffer_handle_t handle, int displayRatio, int hdmiInType);
     bool ClearDrmPlaneContent(int device, int32_t width, int32_t height);
     void setDebugLevel(int debugLevel);
 private:

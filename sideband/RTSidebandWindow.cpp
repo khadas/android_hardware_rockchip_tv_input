@@ -300,7 +300,7 @@ status_t RTSidebandWindow::handleMessageExit() {
 status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     buffer_handle_t buffer = msg.streamBuffer.buffer;
     ALOGD("%s %d buffer: %p in", __FUNCTION__, __LINE__, buffer);
-    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer, FULL_SCREEN);
+    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer, FULL_SCREEN, HDMIIN_TYPE_HDMIRX);
 
     mRenderingQueue.push_back(buffer);
     ALOGD("%s    mRenderingQueue.size() = %d", __FUNCTION__, (int32_t)mRenderingQueue.size());
@@ -308,8 +308,9 @@ status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
     return 0;
 }
 
-status_t RTSidebandWindow::show(buffer_handle_t handle, int displayRatio) {
-    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, handle, displayRatio);
+status_t RTSidebandWindow::show(buffer_handle_t handle, int displayRatio, int hdmiInType) {
+    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top,
+        handle, displayRatio, hdmiInType);
     return 0;
 }
 
