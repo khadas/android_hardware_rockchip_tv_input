@@ -37,17 +37,21 @@ int V4L2DeviceEvent::initialize(int fd){
     return 0;
 }
 void V4L2DeviceEvent::closeEventThread() {
+    ALOGW("@%s start", __FUNCTION__);
     if (mV4L2EventThread) {
         mV4L2EventThread->requestExit();
         mV4L2EventThread->join();
         mV4L2EventThread.clear();
     }
+    ALOGW("@%s end", __FUNCTION__);
 }
 
 void V4L2DeviceEvent::closePipe() {
+    ALOGW("@%s start", __FUNCTION__);
     if (mV4L2EventThread) {
         mV4L2EventThread->closeDevice();
     }
+    ALOGW("@%s end", __FUNCTION__);
 }
 
 int V4L2DeviceEvent::subscribeEvent(int event)
@@ -228,6 +232,7 @@ V4L2DeviceEvent::V4L2EventThread::V4L2EventThread(int fd,V4L2EventCallBack callb
      mVideoFd = fd;
      mCallback_ = callback;
      mCurformat = new V4L2DeviceEvent::FormartSize(0,0,0);
+     mStopThread = false;
 }
 
 V4L2DeviceEvent::V4L2EventThread::~V4L2EventThread() {
@@ -290,6 +295,7 @@ void V4L2DeviceEvent::V4L2EventThread::closeDevice()
     if (write(pipefd[1], "q", 1) != 1) {}
     close(pipefd[0]);
     close(pipefd[1]);
+    mStopThread = true;
 }
 bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
     ALOGV("@%s", __FUNCTION__);
@@ -335,6 +341,9 @@ bool V4L2DeviceEvent::V4L2EventThread::threadLoop() {
 	} else {
 		ALOGD("%d: VIDIOC_DQEVENT failed: %s\n",mVideoFd, strerror(errno));
 	}
+    }
+    if (mStopThread) {
+        return false;
     }
     return true;
 }

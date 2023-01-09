@@ -77,7 +77,7 @@ public:
             virtual bool threadLoop() override;
         private :
             int mVideoFd;
-
+            bool mStopThread = false;
             int pipefd[2] = {-1, -1};
             V4L2EventCallBack mCallback_;
             sp<V4L2DeviceEvent::FormartSize> mCurformat;
