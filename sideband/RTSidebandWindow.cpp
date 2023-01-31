@@ -62,7 +62,7 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
     memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
     ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%x, usage=%lld, type=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, info.streamType);
 
-    if (info.streamType & TYPF_SIDEBAND_WINDOW) {
+    if (info.streamType & TYPE_SIDEBAND_WINDOW) {
         mVopRender = android::DrmVopRender::GetInstance();
         if (!mVopRender->mInitialized) {
             ready = mVopRender->initialize();

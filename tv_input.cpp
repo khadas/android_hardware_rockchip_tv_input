@@ -297,7 +297,7 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             } else {
                 s_TvInputPriv->mDev->set_crop(0, 0, width, height);
             }
-            if (stream->type & TYPF_SIDEBAND_WINDOW) {
+            if (stream->type & TYPE_SIDEBAND_WINDOW) {
                 s_TvInputPriv->mStreamType = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
                 stream->sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());
                 out_buffer = stream->sideband_stream_source_handle;

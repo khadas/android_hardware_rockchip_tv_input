@@ -57,7 +57,7 @@
 //#define DUMP_YUV_IMG
 
 enum FrameType{
-    TYPF_SIDEBAND_WINDOW = 0x1,
+    TYPE_SIDEBAND_WINDOW = 0x1,
     TYPE_STREAM_BUFFER_PRODUCER = 0x2,
 };
 

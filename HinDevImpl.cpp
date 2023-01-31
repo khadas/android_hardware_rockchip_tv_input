@@ -308,7 +308,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
     info.height = mSrcFrameHeight;
     info.usage = STREAM_BUFFER_GRALLOC_USAGE;
     if (initType == TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
-        mFrameType |= TYPF_SIDEBAND_WINDOW;
+        mFrameType |= TYPE_SIDEBAND_WINDOW;
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
         info.usage |= GRALLOC_USAGE_HW_COMPOSER
             | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
@@ -564,7 +564,7 @@ HinDevImpl::~HinDevImpl()
 
 int HinDevImpl::start_device()
 {
-    if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
         //mRequestCaptureCount = 1;
     } else {
         mRequestCaptureCount = 0;
@@ -738,7 +738,7 @@ int HinDevImpl::stop()
          mRkiep = nullptr;
     }
 
-    if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
         mSidebandWindow->clearVopArea();
     }
     enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
@@ -1149,7 +1149,7 @@ int HinDevImpl::aquire_buffer()
         }
 
 
-       if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+       if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
             if (ret != 0) {
                 DEBUG_PRINT(3, "mSidebandWindow->allocateBuffer failed !!!");
@@ -1162,7 +1162,7 @@ int HinDevImpl::aquire_buffer()
 	 if (mHinNodeInfo->cap.device_caps & V4L2_CAP_VIDEO_CAPTURE_MPLANE) {
             for (int j=0; j<PLANES_NUM; j++) {
                 //mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
-		if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+		if (mFrameType & TYPE_SIDEBAND_WINDOW) {
                     mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
                 } else {
                     mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mPreviewRawHandle[i].bufferFd;
@@ -1632,7 +1632,7 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
         return 1;
     } else if (action.compare("hdmiinout") == 0) {
         Mutex::Autolock autoLock(mBufferLock);
-        if (mFrameType & TYPF_SIDEBAND_WINDOW && NULL != mSidebandHandle) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW && NULL != mSidebandHandle) {
             //mSidebandWindow->clearVopArea();
             stopRecord();
             if (mSignalHandle != NULL && mWorkThread != NULL) {
@@ -1707,7 +1707,7 @@ int HinDevImpl::workThread()
         //DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  	//mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].flags = V4L2_BUF_FLAG_NO_CACHE_INVALIDATE |
         //                 V4L2_BUF_FLAG_NO_CACHE_CLEAN;
-        if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
                 mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
         } else {
@@ -1759,7 +1759,7 @@ int HinDevImpl::workThread()
         }
         mSidebandWindow->setDebugLevel(mDebugLevel);
 
-        if (mFrameType & TYPF_SIDEBAND_WINDOW) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             // add flushCache to prevent image tearing and ghosting caused by
             // cache consistency issues
             int currPreviewHandlerIndex = mHinNodeInfo->currBufferHandleIndex;
