@@ -1081,27 +1081,33 @@ int HinDevImpl::set_hin_crop(int x, int y, int width, int height)
 
 int HinDevImpl::get_current_sourcesize(int& width,  int& height,int& pixelformat)
 {
+    ALOGW("[%s %d]", __FUNCTION__, __LINE__);
     int ret = NO_ERROR;
-    v4l2_format format;
-    memset(&format, 0,sizeof(struct v4l2_format));
+    if(mHdmiInType == HDMIIN_TYPE_MIPICSI) {
+        get_csi_format(mHinDevEventHandle, width, height, pixelformat);
+        pixelformat = getNativeWindowFormat(mPixelFormat);
+    } else {
+        v4l2_format format;
+        memset(&format, 0,sizeof(struct v4l2_format));
 
-    format.type = TVHAL_V4L2_BUF_TYPE;
-    ret = ioctl(mHinDevHandle, VIDIOC_G_FMT, &format);
-    if (ret < 0) {
-        DEBUG_PRINT(3, "Open: VIDIOC_G_FMT Failed: %s", strerror(errno));
-        return ret;
+        format.type = TVHAL_V4L2_BUF_TYPE;
+        ret = ioctl(mHinDevHandle, VIDIOC_G_FMT, &format);
+        if (ret < 0) {
+            DEBUG_PRINT(3, "Open: VIDIOC_G_FMT Failed: %s", strerror(errno));
+            return ret;
+        }
+        width = format.fmt.pix.width;
+        height = format.fmt.pix.height;
+        pixelformat = getNativeWindowFormat(format.fmt.pix.pixelformat);
+        mPixelFormat = format.fmt.pix.pixelformat;
+        ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d, fomat 0x%x", width,  height,pixelformat);
     }
-    width = format.fmt.pix.width;
-    height = format.fmt.pix.height;
-    pixelformat = getNativeWindowFormat(format.fmt.pix.pixelformat);
 
     mSrcFrameWidth = width;
     mSrcFrameHeight = height;
     mDstFrameWidth = mSrcFrameWidth;
     mDstFrameHeight = mSrcFrameHeight;
     mBufferSize = mSrcFrameWidth * mSrcFrameHeight * 3/2;
-    mPixelFormat = format.fmt.pix.pixelformat;
-    ALOGD("VIDIOC_G_FMT, w * h: %5d x %5d, fomat 0x%x", width,  height,pixelformat);
     /*if(mIsHdmiIn){
        enum v4l2_buf_type bufType = TVHAL_V4L2_BUF_TYPE;
        ret = ioctl(mHinDevHandle, VIDIOC_STREAMON, &bufType);
