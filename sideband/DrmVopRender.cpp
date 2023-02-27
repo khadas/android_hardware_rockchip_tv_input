@@ -361,9 +361,11 @@ bool DrmVopRender::detect(int device)
         ALOGD("final mDrmModeInfos is empty");
     } else {
         int last_crtc_id = -1;
+        int total_crtc_id_num = 0;
         for (int i=0; i<output->mDrmModeInfos.size(); i++) {
             if (output->mDrmModeInfos[i].crtc) {
                 int crtc_id = output->mDrmModeInfos[i].crtc->crtc_id;
+                total_crtc_id_num++;
                 ALOGD("final  crtc->crtc_id %d %s", crtc_id, output->mDrmModeInfos[i].crtc_plane_mask);
                output->mDrmModeInfos[i].props = drmModeObjectGetProperties(mDrmFd, output->mDrmModeInfos[i].crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
                if (!output->mDrmModeInfos[i].props) {
@@ -382,6 +384,16 @@ bool DrmVopRender::detect(int device)
                             ALOGE("index=%d, %d %s", i, crtc_id, output->mDrmModeInfos[i].connector_name);
                         }
                     }
+                }
+            }
+        }
+        for (int j = 0; j < mDisplayInfos.size(); j++) {
+            if (mDisplayInfos[j].connected) {
+                if (total_crtc_id_num > 0) {
+                    total_crtc_id_num--;
+                } else {
+                    ALOGE("find not crtcid display");
+                    mDisplayInfos[j].connected = false;
                 }
             }
         }
@@ -692,6 +704,16 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height,
     if (mDebugLevel == 3) {
         ALOGE("%s come in, device=%d, handle=%p", __FUNCTION__, device, handle);
     }
+    if (mEnableSkipFrame) {
+        nsecs_t now = systemTime();
+        if (now - mSkipFrameStartTime < SKIP_FRAME_TIME) {
+            if (mDebugLevel == 3) {
+                ALOGE("%s come in, skip frame", __FUNCTION__);
+            }
+            return false;
+        }
+        mEnableSkipFrame = false;
+    }
     if (needRedetect() && mInitialized) {
         ALOGE("=================needRedetect===================");
         DestoryFB();
@@ -700,14 +722,6 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height,
         mSkipFrameStartTime = systemTime();
         mEnableSkipFrame = true;
         return false;
-    } else if (mEnableSkipFrame) {
-        nsecs_t now = systemTime();
-        if (now - mSkipFrameStartTime < SKIP_FRAME_TIME) {
-            if (mDebugLevel == 3) {
-                ALOGE("%s come in, skip frame", __FUNCTION__);
-            }
-            return false;
-        }
     }
 
     int ret = 0;
