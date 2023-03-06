@@ -257,7 +257,7 @@ static int tv_input_get_stream_configurations_ext(
         mconfig[0].format = s_HinDevStreamFormat;//DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[0].width = s_HinDevStreamWidth;
         mconfig[0].height = s_HinDevStreamHeight;
-        mconfig[0].usage = STREAM_BUFFER_GRALLOC_USAGE;
+        mconfig[0].usage = RK_GRALLOC_USAGE_STRIDE_ALIGN_64;//|GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;//STREAM_BUFFER_GRALLOC_USAGE;
         mconfig[0].buffCount = APP_PREVIEW_BUFF_CNT;
 
         mconfig[1].base_config.stream_id = STREAM_ID_FRAME_CAPTURE;
@@ -267,7 +267,7 @@ static int tv_input_get_stream_configurations_ext(
         mconfig[1].format = s_HinDevStreamFormat;//DEFAULT_TVHAL_STREAM_FORMAT;
         mconfig[1].width = s_HinDevStreamWidth;
         mconfig[1].height = s_HinDevStreamWidth;
-        mconfig[1].usage = STREAM_BUFFER_GRALLOC_USAGE;
+        mconfig[1].usage = RK_GRALLOC_USAGE_STRIDE_ALIGN_64;//|GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN;//STREAM_BUFFER_GRALLOC_USAGE;
         mconfig[1].buffCount = APP_PREVIEW_BUFF_CNT;
         *num_of_configs = NUM_OF_CONFIGS_DEFAULT;
         *configs = mconfig;
@@ -330,20 +330,21 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
     return -EINVAL;
 }
 
-NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result) {
-    /*ALOGV("%s req:%u ,%u in result.buff_id=%" PRIu64, __FUNCTION__,requestInfo.seq,result.seq, result.buff_id);
-    tv_input_event_t event;
-    event.capture_result.device_id = requestInfo.deviceId;
-    event.capture_result.stream_id = requestInfo.streamId;
-    event.capture_result.seq = requestInfo.seq++;
-    if (result.buff_id != -1) {
-        event.type = TV_INPUT_EVENT_CAPTURE_SUCCEEDED;
-        event.capture_result.buff_id = result.buff_id;
-        event.capture_result.buffer = result.buffer;
+NotifyQueueDataCallback dataCallback(tv_input_capture_result_t result, uint64_t buff_id) {
+    //ALOGV("%s req:%u ,%u in result.buff_id=%" PRIu64, __FUNCTION__,
+    //    requestInfo.seq, result.seq, buff_id);
+    tv_input_event_ext_t event;
+    event.base_event.capture_result.device_id = requestInfo.deviceId;
+    event.base_event.capture_result.stream_id = requestInfo.streamId;
+    event.base_event.capture_result.seq = requestInfo.seq++;
+    if (buff_id != -1) {
+        event.base_event.type = TV_INPUT_EVENT_CAPTURE_SUCCEEDED;
+        event.buff_id = buff_id;
+        //event.base_event.capture_result.buffer = result.buffer;
     } else {
-        event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
+        event.base_event.type = TV_INPUT_EVENT_CAPTURE_FAILED;
     }
-    s_TvInputPriv->callback->notify(nullptr, &event, nullptr);*/
+    s_TvInputPriv->callback->notify_ext(nullptr, &event, nullptr);
     return 0;
 }
 

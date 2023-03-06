@@ -109,7 +109,7 @@ typedef struct tv_preview_buff_app {
 //     bool isFilled;
 // } tv_input_preview_buff_t;
 
-typedef void (*NotifyQueueDataCallback)(tv_input_capture_result_t result);
+typedef void (*NotifyQueueDataCallback)(tv_input_capture_result_t result, uint64_t buff_id);
 
 typedef void (*app_data_callback)(void *user, source_buffer_info_t *buff_info);
 
@@ -173,10 +173,11 @@ class HinDevImpl {
         int pqBufferThread();
         int iepBufferThread();
         int getPqFmt(int V4L2Fmt);
+        void initPqInfo(int pqMode);
         // int previewBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
-        void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle);
+        void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle, bool forceNotify);
         void doRecordCmd(const map<string, string> data);
         void doPQCmd(const map<string, string> data);
         int getRecordBufferFd(int previewHandlerIndex);
@@ -282,6 +283,7 @@ class HinDevImpl {
         struct HinNodeInfo *mHinNodeInfo;
         sp<V4L2DeviceEvent>     mV4l2Event;
         sp<V4L2DeviceEvent>     mCsiV4l2Event;
+        buffer_handle_t mSignalPreviewHandle = NULL;
         buffer_handle_t mSignalHandle = NULL;
         buffer_handle_t         mSidebandHandle;
         sp<RTSidebandWindow>    mSidebandWindow;
