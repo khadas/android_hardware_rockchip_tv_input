@@ -32,12 +32,15 @@
 #include <utils/Errors.h>
 #include <utils/Mutex.h>
 #include <utils/Condition.h>
+#include <list>
+#include <atomic>
 #include <vector>
 #include <system/window.h>
 #include <sys/types.h>
 #include <inttypes.h>
 #include "rt_type.h"   // NOLINT
 #include "common/Utils.h"
+#include "video_tunnel.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -45,22 +48,6 @@
 #endif
 
 namespace android {
-
-typedef struct RT_SIDEBAND_INFO {
-    INT32 structSize;
-    INT32 structVersion;
-    INT32 left;
-    INT32 top;
-    INT32 right;
-    INT32 bottom;
-    INT64 usage;
-    INT32 width;
-    INT32 height;
-    INT32 format;
-    INT32 dataSpace;
-    INT32 transform;
-    INT32 streamType;
-} RTSidebandInfo;
 
 class DrmVopRender;
 class RTSidebandWindow : public RefBase, IMessageHandler {
@@ -81,17 +68,24 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
         rt_stream_buffer_t streamBuffer;
     };
 
-    status_t init(RTSidebandInfo info);
+    status_t init(const vt_win_attr_t *attr, int sidebandType);
     status_t release();
-    status_t start();
     status_t stop();
+    //vtunnel
     status_t flush();
+    status_t setAttr(const vt_win_attr_t *attr);
+    status_t getAttr(vt_win_attr_t *attr);
+    status_t dequeueBuffer(vt_buffer_t **buffer, int timeout_ms, int *fence);
+    status_t queueBuffer(vt_buffer_t *buffer, int fence, int64_t expected_present_time);
+    status_t cancelBuffer(vt_buffer_t *buffer);
+    status_t allocateSidebandHandle(buffer_handle_t *handle, int VTId);
+    status_t allocateBuffer(vt_buffer_t **buffer,
+        int32_t width, int32_t height, int32_t format, uint64_t usage);
+    status_t freeBuffer(vt_buffer_t **buffer);
+
     status_t flushCache(buffer_handle_t buffer);
     status_t allocateBuffer(buffer_handle_t *buffer);
     status_t freeBuffer(buffer_handle_t *buffer, int type);
-    status_t remainBuffer(buffer_handle_t buffer);
-    status_t dequeueBuffer(buffer_handle_t *buffer);
-    status_t queueBuffer(buffer_handle_t buffer);
     status_t allocateSidebandHandle(buffer_handle_t *handle, int32_t width, int32_t height,
         int32_t format, uint64_t usage);
     int getBufferHandleFd(buffer_handle_t buffer);
@@ -116,6 +110,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
  private:
     RTSidebandWindow(const RTSidebandWindow& other);
     RTSidebandWindow& operator=(const RTSidebandWindow& other);
+    status_t allocateBuffer(vt_buffer_t **buffer);
     int writeData2File(const char *fileName, void *data, int dataSize);
 
     virtual void messageThreadLoop();
@@ -129,7 +124,11 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     common::TvInputBufferManager* mBuffMgr;
     alloc_device_t      *mAllocDevice;
     DrmVopRender        *mVopRender;
-    RTSidebandInfo       mSidebandInfo;
+    vt_win_attr_t        mSidebandInfo;
+    int                  mVTDevFd;
+    int                  mVTID;
+    std::atomic<uint32_t>    mRenderingCnt;
+    std::list<vt_buffer_t *> mBufferQueue;
 
     bool                                mThreadRunning;
     MessageQueue<Message, MessageId>    mMessageQueue;
@@ -138,6 +137,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     android::Mutex                      mLock;
     android::Condition                  mBufferAvailCondition;
     int mDebugLevel;
+    int mSidebandType;
 };
 
 }

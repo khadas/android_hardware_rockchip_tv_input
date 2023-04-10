@@ -278,6 +278,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
     mNotifyQueueCb = NULL;
     mState = STOPED;
     mANativeWindow = NULL;
+    mQbufCount = 0;
     if (mWorkThread != NULL) {
         DEBUG_PRINT(3, "[%s %d] mWorkThread not null, need thread exit", __FUNCTION__, __LINE__);
         mWorkThread->requestExit();
@@ -299,16 +300,43 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
     /**
      *  init RTSidebandWindow
      */
-    RTSidebandInfo info;
-    memset(&info, 0, sizeof(RTSidebandInfo));
-    info.structSize = sizeof(RTSidebandInfo);
+    vt_win_attr_t info;
+    memset(&info, 0, sizeof(vt_win_attr_t));
+    info.struct_size = sizeof(vt_win_attr_t);
+    info.struct_ver = 0;
     info.top = 0;
     info.left = 0;
     info.width = mSrcFrameWidth;
     info.height = mSrcFrameHeight;
     info.usage = STREAM_BUFFER_GRALLOC_USAGE;
     if (initType == TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE) {
-        mFrameType |= TYPE_SIDEBAND_WINDOW;
+        property_get(SIDEBAND_MODE_TYPE, prop_value, "0");
+        if (0 == strcmp(prop_value, "0")) {
+            mFrameType |= TYPE_SIDEBAND_WINDOW;
+        } else {
+            mFrameType |= TYPE_SIDEBAND_VTUNNEL;
+            info.data_space = 0x2;
+            if (V4L2_PIX_FMT_BGR24 != mPixelFormat) {
+                get_extfmt_info();
+                if (mFrameColorRange == HDMIRX_LIMIT_RANGE) {
+                    info.data_space = HAL_DATASPACE_RANGE_LIMITED;
+                } else if (mFrameColorRange == HDMIRX_FULL_RANGE) {
+                    info.data_space = HAL_DATASPACE_RANGE_FULL;
+                } else {
+                    info.data_space = HAL_DATASPACE_RANGE_FULL;
+                }
+                if (mFrameColorSpace == HDMIRX_XVYCC601 || mFrameColorSpace == HDMIRX_SYCC601) {
+                    info.data_space |= HAL_DATASPACE_STANDARD_BT601_625;
+                } else {
+                    info.data_space |= HAL_DATASPACE_STANDARD_BT709;
+                }
+            }
+            info.compress_mode = 0;
+            info.transform = 0;
+            info.buffer_cnt = SIDEBAND_WINDOW_BUFF_CNT;
+            info.remain_cnt = 0;
+            info.usage |= MALI_GRALLOC_USAGE_NO_AFBC;
+        }
         mBufferCount = SIDEBAND_WINDOW_BUFF_CNT;
         mPqIniting = false;
         mFirstRequestCapture = false;
@@ -318,7 +346,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         mBufferCount = APP_PREVIEW_BUFF_CNT;
     }
     if (mHdmiInType == HDMIIN_TYPE_MIPICSI) {
-        info.usage |= RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_64;
+        info.usage |= RK_GRALLOC_USAGE_ALLOC_HEIGHT_ALIGN_16;
         if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             info.usage |= GRALLOC_USAGE_HW_COMPOSER
                 | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
@@ -327,10 +355,9 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         info.usage |= GRALLOC_USAGE_HW_COMPOSER
             | RK_GRALLOC_USAGE_STRIDE_ALIGN_64;
     }
-    info.streamType = mFrameType;
     info.format = mPixelFormat; //0x15
 
-    if(-1 == mSidebandWindow->init(info)) {
+    if(-1 == mSidebandWindow->init(&info, mFrameType)) {
         DEBUG_PRINT(3, "mSidebandWindow->init failed !!!");
         return -1;
     }
@@ -535,8 +562,12 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
 int HinDevImpl::makeHwcSidebandHandle() {
     ALOGW("%s %d", __FUNCTION__, __LINE__);
     buffer_handle_t buffer = NULL;
-
-    mSidebandWindow->allocateSidebandHandle(&buffer, mDstFrameWidth, mDstFrameHeight, -1, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+        mSidebandWindow->allocateSidebandHandle(&buffer, mDstFrameWidth, mDstFrameHeight, -1, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+    } else {
+        mSidebandWindow->allocateSidebandHandle(&buffer, -1);
+        mSidebandWindow->allocateSidebandHandle(&mSidebandCancelHandle, 0);
+    }
     if (!buffer) {
         DEBUG_PRINT(3, "allocate buffer from sideband window failed!");
         return -1;
@@ -549,6 +580,10 @@ buffer_handle_t HinDevImpl::getSindebandBufferHandle() {
     if (mSidebandHandle == NULL)
         makeHwcSidebandHandle();
     return mSidebandHandle;
+}
+
+buffer_handle_t HinDevImpl::getSindebandCancelBufferHandle() {
+    return mSidebandCancelHandle;
 }
 
 HinDevImpl::~HinDevImpl()
@@ -570,7 +605,7 @@ HinDevImpl::~HinDevImpl()
 
 int HinDevImpl::start_device()
 {
-    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+    if (mFrameType & TYPE_SIDEBAND_WINDOW || mFrameType & TYPE_SIDEBAND_VTUNNEL) {
         //mRequestCaptureCount = 1;
     } else {
         mRequestCaptureCount = 0;
@@ -665,6 +700,9 @@ int HinDevImpl::start()
 
     if (mFrameType & TYPE_SIDEBAND_WINDOW) {
         mSidebandWindow->allocateSidebandHandle(&mSignalHandle, -1, -1, HAL_PIXEL_FORMAT_BGR_888, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+        mSidebandWindow->allocateBuffer(&mSignalVTBuffer, mDstFrameWidth, mDstFrameHeight,
+            HAL_PIXEL_FORMAT_BGR_888, RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
     } else if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
         mSidebandWindow->allocateSidebandHandle(&mSignalHandle, mSrcFrameWidth, mSrcFrameHeight,
             HAL_PIXEL_FORMAT_BGR_888, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
@@ -1155,6 +1193,7 @@ int HinDevImpl::aquire_buffer()
 {
     int ret = UNKNOWN_ERROR;
     DEBUG_PRINT(3, "%s %d", __FUNCTION__, __LINE__);
+    memset(&mHinNodeInfo->vt_buffers, 0, sizeof(mHinNodeInfo->vt_buffers));
     for (int i = 0; i < mBufferCount; i++) {
         memset(&mHinNodeInfo->planes[i], 0, sizeof(struct v4l2_plane));
         memset(&mHinNodeInfo->bufferArray[i], 0, sizeof(struct v4l2_buffer));
@@ -1180,6 +1219,16 @@ int HinDevImpl::aquire_buffer()
                 DEBUG_PRINT(3, "mSidebandWindow->allocateBuffer failed !!!");
                 return ret;
             }
+        } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            int fence = -1;
+            ret = mSidebandWindow->dequeueBuffer(&mHinNodeInfo->vt_buffers[i], -1, &fence);
+            mPreviewRawHandle[i].isFilled = true;
+            if (ret != 0) {
+                DEBUG_PRINT(3, "mSidebandWindow->allocateBuffer failed !!!");
+                return ret;
+            } else {
+                DEBUG_PRINT(3, "dequeue success fd=%d", mHinNodeInfo->vt_buffers[i]->handle->data[0]);
+            }
         } else {
             ret = mSidebandWindow->allocateBuffer(&mHinNodeInfo->buffer_handle_poll[i]);
             if (ret != 0) {
@@ -1193,6 +1242,8 @@ int HinDevImpl::aquire_buffer()
                 //mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
                 if (mFrameType & TYPE_SIDEBAND_WINDOW) {
                     mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->vt_buffers[i]->handle);
                 } else if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
                     mHinNodeInfo->bufferArray[i].m.planes[j].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->buffer_handle_poll[i]);
                 }
@@ -1200,6 +1251,7 @@ int HinDevImpl::aquire_buffer()
             }
         }
     }
+
     ALOGD("[%s %d] VIDIOC_QUERYBUF successful", __FUNCTION__, __LINE__);
     return -1;
 }
@@ -1215,6 +1267,8 @@ int HinDevImpl::release_buffer()
     if (mSignalHandle) {
         mSidebandWindow->freeBuffer(&mSignalHandle, 0);
         mSignalHandle = NULL;
+    } else if (mSignalVTBuffer) {
+        mSidebandWindow->freeBuffer(&mSignalVTBuffer);
     }
 
     if (!mRecordHandle.empty()){
@@ -1229,8 +1283,13 @@ int HinDevImpl::release_buffer()
         for (int i=0; i<mPqBufferHandle.size(); i++) {
             //mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
             mPqBufferHandle[i].srcHandle = NULL;
-            mSidebandWindow->freeBuffer(&mPqBufferHandle[i].outHandle, 1);
-            mPqBufferHandle[i].outHandle = NULL;
+            if (mPqBufferHandle[i].outHandle) {
+                mSidebandWindow->freeBuffer(&mPqBufferHandle[i].outHandle, 1);
+                mPqBufferHandle[i].outHandle = NULL;
+            }
+            if (mPqBufferHandle[i].out_vt_buffer != nullptr) {
+                mSidebandWindow->freeBuffer(&mPqBufferHandle[i].out_vt_buffer);
+            }
         }
         mPqBufferHandle.clear();
     }
@@ -1239,8 +1298,13 @@ int HinDevImpl::release_buffer()
         for (int i=0; i<mIepBufferHandle.size(); i++) {
             mSidebandWindow->freeBuffer(&mIepBufferHandle[i].srcHandle, 1);
             mIepBufferHandle[i].srcHandle = NULL;
-            mSidebandWindow->freeBuffer(&mIepBufferHandle[i].outHandle, 1);
-            mIepBufferHandle[i].outHandle = NULL;
+            if (mIepBufferHandle[i].outHandle) {
+                mSidebandWindow->freeBuffer(&mIepBufferHandle[i].outHandle, 1);
+                mIepBufferHandle[i].outHandle = NULL;
+            }
+            if (mIepBufferHandle[i].out_vt_buffer != nullptr) {
+                mSidebandWindow->freeBuffer(&mIepBufferHandle[i].out_vt_buffer);
+            }
         }
         mIepBufferHandle.clear();
     }
@@ -1264,9 +1328,18 @@ int HinDevImpl::release_buffer()
     } else {
         for (int i=0; i<mBufferCount; i++) {
             if (mSidebandWindow) {
-                mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i], 0);
+                if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mSidebandWindow->cancelBuffer(mHinNodeInfo->vt_buffers[i]);
+                    mHinNodeInfo->vt_buffers[i]->handle = NULL;
+                    mHinNodeInfo->vt_buffers[i] = nullptr;
+                } else {
+                    mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i], 0);
+                    mHinNodeInfo->buffer_handle_poll[i] = NULL;
+                }
             }
-            mHinNodeInfo->buffer_handle_poll[i] = NULL;
+        }
+        if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            mSidebandWindow->release();
         }
     }
     return 0;
@@ -1562,9 +1635,14 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
         if (mPqBufferHandle.empty()) {
             mPqBufferHandle.resize(SIDEBAND_PQ_BUFF_CNT);
             for (int i=0; i<mPqBufferHandle.size(); i++) {
-                //mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].srcHandle, -1, -1, -1);
-                mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
-                    HAL_PIXEL_FORMAT_YCrCb_NV12_10, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
+                        HAL_PIXEL_FORMAT_YCrCb_NV12_10, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mSidebandWindow->allocateBuffer(&mPqBufferHandle[i].out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
+                        HAL_PIXEL_FORMAT_YCrCb_NV12_10,
+                        RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
+                }
             }
             ALOGD("%s all pqbufferhandle", __FUNCTION__);
         }
@@ -1578,8 +1656,14 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                 for (int i=0; i<mIepBufferHandle.size(); i++) {
                     mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].srcHandle, mDstFrameWidth, mDstFrameHeight,
                     HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
-                    mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
-                    HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                        mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
+                        HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                        mSidebandWindow->allocateBuffer(&mIepBufferHandle[i].out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
+                            HAL_PIXEL_FORMAT_YCrCb_NV12,
+                            RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
+                    }
                 }
             }
             for (int i=0; i<mIepBufferHandle.size(); i++) {
@@ -1702,6 +1786,9 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
             if (mSignalHandle != NULL && mWorkThread != NULL) {
                 mSidebandWindow->show(mSignalHandle, FULL_SCREEN, mHdmiInType);
             }
+        } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            stopRecord();
+            showVTTunnel(mSignalVTBuffer);
         } else if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
             stopRecord();
             wrapCaptureResultAndNotify(0,
@@ -1775,7 +1862,7 @@ int HinDevImpl::workThread()
         //DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
  	//mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].flags = V4L2_BUF_FLAG_NO_CACHE_INVALIDATE |
         //                 V4L2_BUF_FLAG_NO_CACHE_CLEAN;
-        if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW || mFrameType & TYPE_SIDEBAND_VTUNNEL) {
             if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
                 mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
         } else {
@@ -1821,28 +1908,37 @@ int HinDevImpl::workThread()
             if (mDumpFrameCount > 0) {
                 char fileName[128] = {0};
                 sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d_%d.yuv", mSrcFrameWidth, mSrcFrameHeight, mDumpFrameCount);
-                mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mSidebandWindow->dumpImage(mHinNodeInfo->vt_buffers[mHinNodeInfo->currBufferHandleIndex]->handle, fileName, 0);
+                }
                 mDumpFrameCount--;
             }
         }
         mSidebandWindow->setDebugLevel(mDebugLevel);
-
-        if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW || mFrameType & TYPE_SIDEBAND_VTUNNEL) {
             // add flushCache to prevent image tearing and ghosting caused by
             // cache consistency issues
             int currPreviewHandlerIndex = mHinNodeInfo->currBufferHandleIndex;
+            if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             ret = mSidebandWindow->flushCache(
                 mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex]);
             if (ret != 0) {
                 DEBUG_PRINT(3, "mSidebandWindow->flushCache failed !!!");
                 return ret;
             }
+            }
 
             if (mPqMode != PQ_OFF && !mPqBufferHandle.empty()) {
                 if (mPqBufferHandle[mPqBuffIndex].isFilled) {
                     DEBUG_PRINT(3, "skip pq buffer");
                 } else {
-                    mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex];
+                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                        mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex];
+                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                        mPqBufferHandle[mPqBuffIndex].src_vt_fd = mHinNodeInfo->bufferArray[currPreviewHandlerIndex].m.planes[0].m.fd;
+                    }
                     mPqBufferHandle[mPqBuffIndex].isFilled = true;
                     mPqBuffIndex++;
                     if (mPqBuffIndex == SIDEBAND_PQ_BUFF_CNT) {
@@ -1863,8 +1959,11 @@ int HinDevImpl::workThread()
                     if (mDebugLevel == 3) {
                         ALOGE("sidebandwindow show index=%d", currPreviewHandlerIndex);
                     }
-                    mSidebandWindow->show(
-                        mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio, mHdmiInType);
+                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                        mSidebandWindow->show(mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio, mHdmiInType);
+                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                        showVTTunnel(mHinNodeInfo->vt_buffers[currPreviewHandlerIndex]);
+                    }
                 }
             }
 
@@ -1943,6 +2042,41 @@ int HinDevImpl::workThread()
     return NO_ERROR;
 }
 
+int HinDevImpl::showVTTunnel(vt_buffer_t* vt_buffer) {
+    if (vt_buffer == nullptr) {
+        ALOGE("%s buffer is nullptr", __FUNCTION__);
+        return 0;
+    }
+    int displayDqbufFd = 0;
+    int ret = 0;
+    ret = mSidebandWindow->queueBuffer(vt_buffer, -1, 0);
+    mQbufCount++;
+    if (mQbufCount > 2) {
+        vt_buffer_t *vtBuf;
+        //memset(vtBuf, 0, sizeof(vt_buffer_t));
+        int fence_id = -1;
+        int timeout_ms = 100;
+        nsecs_t startDqbufTime = 0;
+        if (mDebugLevel == 3) {
+            startDqbufTime = systemTime();
+        }
+        ret = mSidebandWindow->dequeueBuffer(&vtBuf, timeout_ms, &fence_id);
+        if (mDebugLevel == 3) {
+            nsecs_t endDqbufTime = systemTime();
+            nsecs_t usedDqbufTime = endDqbufTime - startDqbufTime;
+            if (vtBuf && vtBuf->handle) {
+                displayDqbufFd = vtBuf->handle->data[0];
+            } else {
+                ALOGE("%s not find displayDqbufFd dqbuf ret=%d", __FUNCTION__, ret);
+            }
+            ALOGE("%s displayDqbufFd=%d, ret=%d, usedDqbufTime=%ld",
+                __FUNCTION__, displayDqbufFd, ret, (long)usedDqbufTime);
+        }
+        mQbufCount--;
+    }
+    return displayDqbufFd;
+}
+
 int HinDevImpl::pqBufferThread() {
     char debugInfoValue[PROPERTY_VALUE_MAX] = {0};
     property_get(TV_INPUT_DEBUG_LEVEL, debugInfoValue, "0");
@@ -2006,8 +2140,13 @@ int HinDevImpl::pqBufferThread() {
                                 mIepBuffIndex = 0;
                              }
                          } else {
-                             mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                             mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
+                             if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                                    mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
+                             } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                                 mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
+                                    mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
+                             }
                              mIepBufferHandle[mIepBuffIndex].isFilled = true;
                              mIepBuffIndex++;
                              if (mIepBuffIndex == SIDEBAND_IEP_BUFF_CNT) {
@@ -2016,23 +2155,42 @@ int HinDevImpl::pqBufferThread() {
                          }
                     }
                 } else {
-                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                        mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                            mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                        mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
+                            mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                    }
                     showPqFrame = true;
                 }
             } else if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)) {
-                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
+                        mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
+                }
                 showPqFrame = true;
             } else if (enableLuma) {
-                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], PQ_CACL_LUMA);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], PQ_CACL_LUMA);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
+                        mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], PQ_CACL_LUMA);
+                }
             }
             if (mState != START) {
                 return NO_ERROR;
             }
             if (showPqFrame) {
-                mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio, mHdmiInType);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio, mHdmiInType);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    showVTTunnel(mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer);
+                }
             } else if(mDebugLevel == 3) {
                 ALOGE("pq mSidebandWindow no show, because showPqFrame false");
             }
@@ -2096,15 +2254,24 @@ int HinDevImpl::iepBufferThread() {
             if (mIepBufferHandle[cur].isFilled && mIepBufferHandle[last1].isFilled && mIepBufferHandle[last2].isFilled) {
                 int curIepOutIndex = mIepBuffOutIndex;
                 int nextIepOutIndex = (mIepBuffOutIndex + SIDEBAND_IEP_BUFF_CNT + 1)%SIDEBAND_IEP_BUFF_CNT;
-                mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
-                    mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
+                        mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
+                        mIepBufferHandle[curIepOutIndex].out_vt_buffer->handle->data[0], mIepBufferHandle[nextIepOutIndex].out_vt_buffer->handle->data[0]);
+                }
                 if (mState != START) {
                     if(mDebugLevel == 3) {
                         ALOGE("iep mState != START return NO_ERROR");
                     }
                     return NO_ERROR;
                 }
-                mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio, mHdmiInType);
+                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
+                    mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio, mHdmiInType);
+                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    showVTTunnel(mIepBufferHandle[curIepOutIndex].out_vt_buffer);
+                }
                 mIepBufferHandle[curIepOutIndex].isFilled = false;
                 mIepBuffOutIndex ++;
                 if (mIepBuffOutIndex == SIDEBAND_IEP_BUFF_CNT) {

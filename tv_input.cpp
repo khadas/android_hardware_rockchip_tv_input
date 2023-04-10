@@ -232,6 +232,7 @@ void findTvDevices(tv_input_private_t *priv) {
 #define NUM_OF_CONFIGS_DEFAULT 2
 static tv_stream_config_ext mconfig[NUM_OF_CONFIGS_DEFAULT];
 static native_handle_t* out_buffer;
+static native_handle_t* out_cancel_buffer = nullptr;
 
 static int tv_input_get_stream_configurations_ext(
         const struct tv_input_device *dev, int device_id, int *num_of_configs, const tv_stream_config_ext **configs)
@@ -281,12 +282,18 @@ static int tv_input_get_stream_configurations_ext(
 
 static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_stream_t *stream)
 {
-    ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->stream_id, stream->type);
+    ALOGD("%s called", __func__);
+    return 0;
+}
+
+static int tv_input_open_stream_ext(struct tv_input_device *dev, int device_id, tv_stream_ext_t *stream)
+{
+    ALOGD("func: %s, device_id: %d, stream_id=%d, type=%d", __func__, device_id, stream->base_stream.stream_id, stream->base_stream.type);
     if (s_TvInputPriv) {
         if (s_TvInputPriv->mDev && s_TvInputPriv->isInitialized) {
             int width = s_HinDevStreamWidth;
             int height = s_HinDevStreamHeight;
-            requestInfo.streamId = stream->stream_id;
+            requestInfo.streamId = stream->base_stream.stream_id;
 
             if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))
                 return -EINVAL;
@@ -297,10 +304,17 @@ static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_s
             } else {
                 s_TvInputPriv->mDev->set_crop(0, 0, width, height);
             }
-            if (stream->type & TYPE_SIDEBAND_WINDOW) {
+            if (stream->base_stream.type & TYPE_SIDEBAND_WINDOW) {
+                ALOGD("stream->base_stream.type & TYPE_SIDEBAND_WINDOW");
                 s_TvInputPriv->mStreamType = TV_STREAM_TYPE_INDEPENDENT_VIDEO_SOURCE;
-                stream->sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());
-                out_buffer = stream->sideband_stream_source_handle;
+                stream->base_stream.sideband_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandBufferHandle());
+                out_buffer = stream->base_stream.sideband_stream_source_handle;
+                if (s_TvInputPriv->mDev->getSindebandCancelBufferHandle() == NULL) {
+                    ALOGD("%s cancel buffer handle is NULL", __FUNCTION__);
+                } else {
+                    stream->sideband_cancel_stream_source_handle = native_handle_clone(s_TvInputPriv->mDev->getSindebandCancelBufferHandle());
+                    out_cancel_buffer = stream->sideband_cancel_stream_source_handle;
+                }
             }
             s_TvInputPriv->mDev->start();
         }
@@ -319,7 +333,11 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
                 native_handle_delete(out_buffer);
                 out_buffer=NULL;
             }
-
+            if (out_cancel_buffer) {
+                native_handle_close(out_cancel_buffer);
+                native_handle_delete(out_cancel_buffer);
+                out_cancel_buffer = nullptr;
+            }
             s_TvInputPriv->mDev->stop();
             s_TvInputPriv->isInitialized = false;
             s_TvInputPriv->isOpened = false;
@@ -501,6 +519,7 @@ static int tv_input_device_open(const struct hw_module_t* module,
         dev->device.request_capture_ext = tv_input_request_capture_ext;
         dev->device.get_stream_configurations_ext = tv_input_get_stream_configurations_ext;
         dev->device.set_placeholder = tv_input_set_placeholder;
+        dev->device.open_stream_ext = tv_input_open_stream_ext;
 
         *device = &dev->device.common;
         status = 0;

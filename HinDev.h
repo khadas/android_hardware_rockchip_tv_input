@@ -58,6 +58,7 @@ struct HinNodeInfo {
     struct v4l2_requestbuffers reqBuf;
     struct v4l2_buffer bufferArray[SIDEBAND_WINDOW_BUFF_CNT];
     buffer_handle_t buffer_handle_poll[SIDEBAND_WINDOW_BUFF_CNT];
+    vt_buffer_t *vt_buffers[SIDEBAND_WINDOW_BUFF_CNT];
 //    long *mem[SIDEBAND_WINDOW_BUFF_CNT];
 //    unsigned reservedData[SIDEBAND_WINDOW_BUFF_CNT];
 //    unsigned refcount[SIDEBAND_WINDOW_BUFF_CNT];
@@ -82,7 +83,9 @@ typedef struct tv_record_buffer_info {
 
 typedef struct tv_pq_buffer_info {
     buffer_handle_t srcHandle = NULL;
-    buffer_handle_t outHandle;
+    buffer_handle_t outHandle = NULL;
+    int src_vt_fd = -1;
+    vt_buffer_t *out_vt_buffer = nullptr;
     bool isFilled;
 } tv_pq_buffer_info_t;
 
@@ -157,6 +160,7 @@ class HinDevImpl {
         int stop_device();
         int set_mode(int display_mode);
         buffer_handle_t getSindebandBufferHandle();
+        buffer_handle_t getSindebandCancelBufferHandle();
         int deal_priv_message(const string action, const map<string, string> data);
         int request_capture(buffer_handle_t rawHandle, uint64_t bufferId);
         bool check_zme(int src_width, int src_height, int* dst_width, int* dst_height);
@@ -187,6 +191,7 @@ class HinDevImpl {
         void buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int srcWidth, int srcHeight,
             buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride);
         int get_extfmt_info();
+        int showVTTunnel(vt_buffer_t* vt_buffer);
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -194,7 +199,7 @@ class HinDevImpl {
                 WorkThread(HinDevImpl* source) :
                     Thread(false), mSource(source) { }
                 virtual void onFirstRef() {
-                    run("hdmi_input_source work thread", PRIORITY_URGENT_DISPLAY);
+                    run("tif work thread", PRIORITY_URGENT_DISPLAY);
                 }
                 virtual bool threadLoop() {
                     mSource->workThread();
@@ -208,7 +213,7 @@ class HinDevImpl {
                 PqBufferThread(HinDevImpl* source) :
                     Thread(false), mSource(source) { }
                 virtual void onFirstRef() {
-                    run("hdmi_input_source pq buffer thread", PRIORITY_URGENT_DISPLAY);
+                    run("tif pq buffer thread", PRIORITY_URGENT_DISPLAY);
                 }
                 virtual bool threadLoop() {
                     mSource->pqBufferThread();
@@ -223,7 +228,7 @@ class HinDevImpl {
                 IepBufferThread(HinDevImpl* source) :
                     Thread(false), mSource(source) { }
                 virtual void onFirstRef() {
-                    run("hdmi_input_source iep buffer thread", PRIORITY_URGENT_DISPLAY);
+                    run("tif iep buffer thread", PRIORITY_URGENT_DISPLAY);
                 }
                 virtual bool threadLoop() {
                     mSource->iepBufferThread();
@@ -285,7 +290,9 @@ class HinDevImpl {
         sp<V4L2DeviceEvent>     mCsiV4l2Event;
         buffer_handle_t mSignalPreviewHandle = NULL;
         buffer_handle_t mSignalHandle = NULL;
+        vt_buffer_t *mSignalVTBuffer = nullptr;
         buffer_handle_t         mSidebandHandle;
+        buffer_handle_t         mSidebandCancelHandle = NULL;
         sp<RTSidebandWindow>    mSidebandWindow;
         int mFrameType;
         bool mOpen;
@@ -318,5 +325,6 @@ class HinDevImpl {
         int mLastPqStatus = 0;
         int mEnableDump = 0;
         int mHdmiInType = HDMIIN_TYPE_HDMIRX;
+        int mQbufCount = 0;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };

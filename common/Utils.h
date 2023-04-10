@@ -59,6 +59,7 @@
 enum FrameType{
     TYPE_SIDEBAND_WINDOW = 0x1,
     TYPE_STREAM_BUFFER_PRODUCER = 0x2,
+    TYPE_SIDEBAND_VTUNNEL = 0x4,
 };
 
 enum HdmiInType{
@@ -95,6 +96,8 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_DEBUG_LEVEL "vendor.tvinput.debug.level"
 #define TV_INPUT_DEBUG_DUMP "vendor.tvinput.debug.dump"
 #define TV_INPUT_DEBUG_DUMPNUM "vendor.tvinput.debug.dumpnum"
+
+#define SIDEBAND_MODE_TYPE "vendor.hwc.enable_sideband_stream_2_mode"
 
 #define DEBUG_PRINT(level, fmt, arg...)                       \
     do {                                                      \

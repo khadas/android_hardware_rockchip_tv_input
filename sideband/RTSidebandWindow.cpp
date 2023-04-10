@@ -26,6 +26,7 @@
 #include <sys/time.h>
 #include <utils/Timers.h>
 #include <string.h>
+#include <ui/GraphicBufferAllocator.h>
 
 #include "DrmVopRender.h"
 
@@ -33,9 +34,14 @@ namespace android {
 
 #define MIN_BUFFER_COUNT_UNDEQUEUE      0
 
+static uint64_t g_session_id;
+
 RTSidebandWindow::RTSidebandWindow()
         : mBuffMgr(nullptr),
           mVopRender(NULL),
+          mVTDevFd(-1),
+          mVTID(-1),
+          mRenderingCnt(0),
           mThreadRunning(false),
           mMessageQueue("RenderThread", static_cast<int>(MESSAGE_ID_MAX)),
           mMessageThread(nullptr),
@@ -47,28 +53,46 @@ RTSidebandWindow::~RTSidebandWindow() {
     DEBUG_PRINT(mDebugLevel, "%s %d in", __FUNCTION__, __LINE__);
 }
 
-status_t RTSidebandWindow::init(RTSidebandInfo info) {
+status_t RTSidebandWindow::init(const vt_win_attr_t *attr, int sidebandType) {
     ALOGD("%s %d in", __FUNCTION__, __LINE__);
     status_t    err = 0;
     bool        ready = false;
+    mSidebandType = sidebandType;
 
     mBuffMgr = common::TvInputBufferManager::GetInstance();
 
-    if (info.structSize != sizeof(RTSidebandInfo)) {
+    if (attr->struct_size != sizeof(vt_win_attr_t)) {
         DEBUG_PRINT(3, "sideband info struct size is invailed!");
         goto __FAILED;
     }
 
-    memcpy(&mSidebandInfo, &info, sizeof(RTSidebandInfo));
-    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%x, usage=%lld, type=%d", mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, info.streamType);
+    memcpy(&mSidebandInfo, attr, sizeof(vt_win_attr_t));
+    ALOGD("RTSidebandWindow::init width=%d, height=%d, format=%x, usage=%lld, type=%d",
+        mSidebandInfo.width, mSidebandInfo.height, mSidebandInfo.format, (long long)mSidebandInfo.usage, sidebandType);
 
-    if (info.streamType & TYPE_SIDEBAND_WINDOW) {
+    if (mSidebandType & TYPE_SIDEBAND_WINDOW) {
         mVopRender = android::DrmVopRender::GetInstance();
         if (!mVopRender->mInitialized) {
             ready = mVopRender->initialize();
             if (ready) {
                 mVopRender->detect();
             }
+        }
+    } else if (mSidebandType & TYPE_SIDEBAND_VTUNNEL) {
+        mVTDevFd = rk_vt_open();
+        if (mVTDevFd < 0) {
+            ALOGE("rk_vt_open mVTDevFd=%d failed", mVTDevFd);
+            goto __FAILED;
+        }
+        err = rk_vt_alloc_id(mVTDevFd, &mVTID);
+        if (err < 0 || mVTID < 0) {
+            goto __ALLOC_ID_FAILED;
+        }
+        ALOGW("rk_vt_alloc_id vtunnel_id=%d", mVTID);
+        err = rk_vt_connect(mVTDevFd, mVTID, RKVT_ROLE_PRODUCER);
+        if (err <  0) {
+            ALOGE("rk_vt_connect vtunnel_id=%d failed", mVTID);
+            goto __CONNECT_FALED;
         }
     }
 
@@ -80,29 +104,32 @@ status_t RTSidebandWindow::init(RTSidebandInfo info) {
 #endif
 
     return err;
+__CONNECT_FALED:
+    rk_vt_free_id(mVTDevFd, mVTID);
+__ALLOC_ID_FAILED:
+    rk_vt_close(mVTDevFd);
 __FAILED:
     return -1;
 }
 
 status_t RTSidebandWindow::release() {
-    ALOGD("%s %d in", __FUNCTION__, __LINE__);
-    requestExitAndWait();
-    if (mMessageThread != NULL) {
-        mMessageThread.reset();
-        mMessageThread = NULL;
+    ALOGW("%s mVTDevFd=%d, mVTID=%d", __FUNCTION__, mVTDevFd, mVTID);
+    if (mVTID >= 0) {
+        rk_vt_disconnect(mVTDevFd, mVTID, RKVT_ROLE_PRODUCER);
+        rk_vt_free_id(mVTDevFd, mVTID);
+        rk_vt_close(mVTDevFd);
     }
 
-    while (mRenderingQueue.size() > 0) {
-        buffer_handle_t tmpBuffer = mRenderingQueue.front();
-        mRenderingQueue.erase(mRenderingQueue.begin());
-        mBuffMgr->Free(tmpBuffer);
-    }
+    do {
+        android::Mutex::Autolock _l(mLock);
+        while (mBufferQueue.size() > 0) {
+            vt_buffer_t *tmpBuffer = mBufferQueue.front();
+            mBufferQueue.erase(mBufferQueue.begin());
+            freeBuffer(&tmpBuffer);
+        }
+    } while (0);
+    mRenderingCnt = 0;
 
-    return 0;
-}
-
-status_t RTSidebandWindow::start() {
-    DEBUG_PRINT(3, "%s %d in", __FUNCTION__, __LINE__);
     return 0;
 }
 
@@ -117,13 +144,192 @@ status_t RTSidebandWindow::stop() {
 }
 
 status_t RTSidebandWindow::flush() {
-    Message msg;
-    memset(&msg, 0, sizeof(Message));
-    msg.id = MESSAGE_ID_FLUSH;
-    status_t status = mMessageQueue.send(&msg);
+    android::Mutex::Autolock _l(mLock);
+    while (mBufferQueue.size() > 0) {
+        vt_buffer_t *tmpBuffer = mBufferQueue.front();
+        mBufferQueue.erase(mBufferQueue.begin());
+        freeBuffer(&tmpBuffer);
+    }
+    mRenderingCnt = 0;
 
-    return status;
+    return rk_vt_reset(mVTDevFd, mVTID);
 }
+
+status_t RTSidebandWindow::setAttr(const vt_win_attr_t *attr) {
+    android::Mutex::Autolock _l(mLock);
+
+    if (attr->struct_size != sizeof(vt_win_attr_t)) {
+        ALOGE("setAttr: sideband window info struct size is invailed!");
+        return -1;
+    }
+
+    memcpy(&mSidebandInfo, attr, sizeof(vt_win_attr_t));
+
+    return 0;
+}
+
+status_t RTSidebandWindow::getAttr(vt_win_attr_t *info) {
+    android::Mutex::Autolock _l(mLock);
+
+    memcpy(info, &mSidebandInfo, sizeof(vt_win_attr_t));
+
+    return 0;
+}
+
+status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle,
+        int VTId) {
+    native_handle_t *temp_buffer = NULL;
+    vt_sideband_data_t info;
+
+    memset(&info, 0, sizeof(vt_sideband_data_t));
+
+    g_session_id++;
+    info.version        = sizeof(vt_sideband_data_t);
+    info.tunnel_id      = VTId > -1 ? VTId : mVTID;
+    info.crop.left      = mSidebandInfo.left;
+    info.crop.top       = mSidebandInfo.top;
+    info.crop.right     = mSidebandInfo.right;
+    info.crop.bottom    = mSidebandInfo.bottom;
+    info.width          = mSidebandInfo.width;
+    info.height         = mSidebandInfo.height;
+    info.format         = mSidebandInfo.format;
+    info.transform      = mSidebandInfo.transform;
+    info.usage          = mSidebandInfo.usage;
+    info.data_space     = mSidebandInfo.data_space;
+    info.compress_mode  = mSidebandInfo.compress_mode;
+    info.session_id     = g_session_id;
+
+    temp_buffer = native_handle_create(0, sizeof(vt_sideband_data_t) / sizeof(int));
+    temp_buffer->version = sizeof(native_handle_t);
+    temp_buffer->numFds  = 0;
+    temp_buffer->numInts = sizeof(vt_sideband_data_t) / sizeof(int);
+    memcpy(&temp_buffer->data[0], &info, sizeof(vt_sideband_data_t));
+
+    *handle = (buffer_handle_t)temp_buffer;
+
+    ALOGI("allocate handle %p to native window session-id %lld",
+            temp_buffer, (long long)info.session_id);
+    ALOGI("allocate handle: tid[%d] crop[%d %d %d %d], wxh[%d %d] fmt[%d] " \
+           "transform[%d] usage[%p] data_space[%lld] compress_mode[%d]",
+           info.tunnel_id, info.crop.left, info.crop.top, info.crop.right,
+           info.crop.bottom, info.width, info.height, info.format, info.transform,
+           (void *)info.usage, (long long)info.data_space, info.compress_mode);
+
+    return 0;
+}
+
+status_t RTSidebandWindow::allocateBuffer(vt_buffer_t **buffer) {
+    return allocateBuffer(buffer,
+        mSidebandInfo.width, mSidebandInfo.height,
+        mSidebandInfo.format, mSidebandInfo.usage);
+}
+
+status_t RTSidebandWindow::allocateBuffer(vt_buffer_t **buffer,
+        int width, int32_t height, int32_t format, uint64_t usage) {
+    GraphicBufferAllocator &allocator = GraphicBufferAllocator::get();
+    buffer_handle_t temp_buffer = NULL;
+    uint32_t outStride = 0;
+    vt_buffer_t *vtBuffer = NULL;
+
+    status_t err = allocator.allocate(width, height,
+                                      format,
+                                      1,
+                                      usage,
+                                      &temp_buffer,
+                                      &outStride,
+                                      0,
+                                      std::move("videotunnel"));
+    if (err != NO_ERROR) {
+        return err;
+    }
+
+    vtBuffer = rk_vt_buffer_malloc();
+    vtBuffer->handle = (native_handle_t *)temp_buffer;
+    *buffer = vtBuffer;
+    ALOGI("allocate buffer: fd-0[%d] wxh[%d %d] fmt[0x%x] usage[%p]",
+           temp_buffer->data[0], width, height,
+           format, (void *)usage);
+
+    return 0;
+}
+
+status_t RTSidebandWindow::freeBuffer(vt_buffer_t **buffer) {
+    GraphicBufferAllocator &allocator = GraphicBufferAllocator::get();
+
+    ALOGI("free buffer: fd-0[%d] wxh[%d %d] fmt[0x%x] usage[%p]",
+           (*buffer)->handle->data[0], mSidebandInfo.width, mSidebandInfo.height,
+           mSidebandInfo.format, (void *)mSidebandInfo.usage);
+    allocator.free((*buffer)->handle);
+    (*buffer)->handle = NULL;
+    rk_vt_buffer_free(buffer);
+    *buffer = NULL;
+
+    return 0;
+}
+
+status_t RTSidebandWindow::dequeueBuffer(vt_buffer_t **buffer, int timeout_ms, int *fence) {
+    int err = 0;
+    vt_buffer_t *tmpBuffer = NULL;
+
+    {
+        android::Mutex::Autolock _l(mLock);
+        if (mBufferQueue.size() < mSidebandInfo.buffer_cnt) {
+            err = allocateBuffer(buffer);
+            if (err == 0) {
+                mBufferQueue.push_back(*buffer);
+            }
+            return err;
+        }
+    }
+
+    err = rk_vt_dequeue_buffer(mVTDevFd, mVTID, timeout_ms, &tmpBuffer);
+    if (err != 0 && tmpBuffer == NULL) {
+        return err;
+    }
+    *buffer = tmpBuffer;
+    *fence = -1;
+    mRenderingCnt--;
+
+    return 0;
+}
+
+status_t RTSidebandWindow::queueBuffer(vt_buffer_t *buffer, int fence, int64_t expected_present_time) {
+    mRenderingCnt++;
+    buffer->crop.left = mSidebandInfo.left;
+    buffer->crop.top = mSidebandInfo.top;
+    buffer->crop.right = mSidebandInfo.right;
+    buffer->crop.bottom = mSidebandInfo.bottom;
+    return rk_vt_queue_buffer(mVTDevFd, mVTID, (vt_buffer_t *)buffer, expected_present_time);
+}
+
+status_t RTSidebandWindow::cancelBuffer(vt_buffer_t *buffer) {
+    {
+        android::Mutex::Autolock _l(mLock);
+        if (mRenderingCnt >= mSidebandInfo.remain_cnt) {
+            for (auto it = mBufferQueue.begin(); it != mBufferQueue.end(); it++) {
+                if (*it == buffer) {
+                    mBufferQueue.erase(it);
+                    return freeBuffer(&buffer);
+                }
+            }
+            if (buffer) {
+                if (buffer->handle) {
+                    ALOGW("cancel buffer(%p) fd-0(%d) not allocate by sideband window.",
+                        buffer, buffer->handle->data[0]);
+                } else {
+                    ALOGE("%s cancel buffer(%p) but buffer->handle is NULL.",
+                        __FUNCTION__, buffer);
+                }
+            } else {
+                ALOGE("%s cancel NULL buffer.", __FUNCTION__);
+            }
+        }
+    }
+    mRenderingCnt++;
+
+    return rk_vt_cancel_buffer(mVTDevFd, mVTID, buffer);
+}
+
 
 status_t RTSidebandWindow::flushCache(buffer_handle_t buffer) {
     if (!buffer) {
@@ -193,48 +399,12 @@ status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer, int type) {
     return 0;
 }
 
-status_t RTSidebandWindow::remainBuffer(buffer_handle_t buffer) {
-    DEBUG_PRINT(mDebugLevel, "remainBuffer buffer: %p", buffer);
-    // android::Mutex::Autolock _l(mLock);
-    mRenderingQueue.push_back(buffer);
-    return 0;
-}
-
-
-status_t RTSidebandWindow::dequeueBuffer(buffer_handle_t *buffer) {
-    buffer_handle_t tmpBuffer = NULL;
-    status_t status = 0;
-    ALOGD("dequeueBuffer size: %d", (int32_t)mRenderingQueue.size());
-    if (mRenderingQueue.size() > MIN_BUFFER_COUNT_UNDEQUEUE) {
-        tmpBuffer = mRenderingQueue.front();
-        Message msg;
-        memset(&msg, 0, sizeof(Message));
-        msg.id = MESSAGE_ID_DEQUEUE_REQUEST;
-        status = mMessageQueue.send(&msg);
-
-    }
-    *buffer = tmpBuffer;
-    return status;
-}
-
-status_t RTSidebandWindow::queueBuffer(buffer_handle_t buffer) {
-    (void)buffer;
-    ALOGD("%s %d in buffer: %p queue size: %d", __FUNCTION__, __LINE__, buffer, (int32_t)mRenderingQueue.size());
-    Message msg;
-    memset(&msg, 0, sizeof(Message));
-    msg.id = MESSAGE_ID_RENDER_REQUEST;
-    msg.streamBuffer.buffer = buffer;
-
-    status_t status = mMessageQueue.send(&msg);
-    return status;
-}
-
 status_t RTSidebandWindow::setBufferGeometry(int32_t width, int32_t height, int32_t format) {
     DEBUG_PRINT(mDebugLevel, "%s %d width=%d height=%d in", __FUNCTION__, __LINE__, width, height);
     mSidebandInfo.width = width;
     mSidebandInfo.height = height;
     mSidebandInfo.format = format;
-
+    RTSidebandWindow::setAttr(&mSidebandInfo);
     return 0;
 }
 
@@ -243,7 +413,7 @@ status_t RTSidebandWindow::setCrop(int32_t left, int32_t top, int32_t right, int
     mSidebandInfo.top = top;
     mSidebandInfo.right = right;
     mSidebandInfo.bottom = bottom;
-
+    RTSidebandWindow::setAttr(&mSidebandInfo);
     return 0;
 }
 
@@ -297,7 +467,7 @@ status_t RTSidebandWindow::handleMessageExit() {
     return 0;
 }
 
-status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
+status_t RTSidebandWindow::handleRenderRequest(Message &msg) { 
     buffer_handle_t buffer = msg.streamBuffer.buffer;
     ALOGD("%s %d buffer: %p in", __FUNCTION__, __LINE__, buffer);
     mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top, buffer, FULL_SCREEN, HDMIIN_TYPE_HDMIRX);
@@ -309,8 +479,10 @@ status_t RTSidebandWindow::handleRenderRequest(Message &msg) {
 }
 
 status_t RTSidebandWindow::show(buffer_handle_t handle, int displayRatio, int hdmiInType) {
-    mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top,
-        handle, displayRatio, hdmiInType);
+    if (mVopRender) {
+        mVopRender->SetDrmPlane(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top,
+            handle, displayRatio, hdmiInType);
+    }
     return 0;
 }
 
@@ -323,8 +495,10 @@ void RTSidebandWindow::setDebugLevel(int debugLevel) {
 
 status_t RTSidebandWindow::clearVopArea() {
     ALOGD("RTSidebandWindow::clearVopArea()");
-    mVopRender->DestoryFB();
-    mVopRender->ClearDrmPlaneContent(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top);
+    if (mVopRender) {
+        mVopRender->DestoryFB();
+        mVopRender->ClearDrmPlaneContent(0, mSidebandInfo.right - mSidebandInfo.left, mSidebandInfo.bottom - mSidebandInfo.top);
+    }
     return 0;
 }
 

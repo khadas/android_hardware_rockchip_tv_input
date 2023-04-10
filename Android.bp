@@ -19,6 +19,7 @@ cc_library_shared {
 	"libgralloc_hdmi_in_headers",
     ],
     shared_libs: [
+        "librkvt",
         "librkswpq",
         "libpq",
         "libiep",
@@ -61,6 +62,7 @@ cc_library_shared {
     include_dirs: [
         "vendor/rockchip/hardware/interfaces/rockit/include/",
         "vendor/rockchip/hardware/interfaces/rockit/include/rt_base",
+        "vendor/rockchip/hardware/interfaces/vtunnel/include/",
         "frameworks/native/libs/nativebase/include/",
     "hardware/rockchip/libgralloc",
     "frameworks/native/include/gui",
