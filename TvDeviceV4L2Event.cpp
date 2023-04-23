@@ -236,7 +236,8 @@ V4L2DeviceEvent::V4L2EventThread::V4L2EventThread(int fd,V4L2EventCallBack callb
 }
 
 V4L2DeviceEvent::V4L2EventThread::~V4L2EventThread() {
-    closeDevice();
+    ALOGW("@%s", __FUNCTION__);
+    //closeDevice();
 }
 bool V4L2DeviceEvent::V4L2EventThread::v4l2pipe() {
     ALOGI("@%s", __FUNCTION__);

@@ -280,6 +280,32 @@ static int tv_input_get_stream_configurations_ext(
     return 0;
 }
 
+static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int stream_id)
+{
+    ALOGD("func: %s, device_id: %d, stream_id: %d", __func__, device_id, stream_id);
+    if (s_TvInputPriv) {
+        if (s_TvInputPriv->mDev) {
+            if (out_buffer) {
+                native_handle_close(out_buffer);
+                native_handle_delete(out_buffer);
+                out_buffer=NULL;
+            }
+            if (out_cancel_buffer) {
+                native_handle_close(out_cancel_buffer);
+                native_handle_delete(out_cancel_buffer);
+                out_cancel_buffer = nullptr;
+            }
+            s_TvInputPriv->mDev->stop();
+            s_TvInputPriv->isInitialized = false;
+            s_TvInputPriv->isOpened = false;
+            delete s_TvInputPriv->mDev;
+            s_TvInputPriv->mDev = nullptr;
+            return 0;
+        }
+    }
+    return -EINVAL;
+}
+
 static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_stream_t *stream)
 {
     ALOGD("%s called", __func__);
@@ -295,8 +321,11 @@ static int tv_input_open_stream_ext(struct tv_input_device *dev, int device_id, 
             int height = s_HinDevStreamHeight;
             requestInfo.streamId = stream->base_stream.stream_id;
 
-            if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat))
+            if(s_TvInputPriv->mDev->set_format(width, height, s_HinDevStreamFormat)) {
+                ALOGE("%s set_format failed! force release", __func__);
+                tv_input_close_stream(dev, device_id, requestInfo.streamId);
                 return -EINVAL;
+            }
             int dst_width = 0, dst_height = 0;
             bool use_zme = s_TvInputPriv->mDev->check_zme(width, height, &dst_width, &dst_height);
             if(use_zme) {
@@ -319,31 +348,6 @@ static int tv_input_open_stream_ext(struct tv_input_device *dev, int device_id, 
             s_TvInputPriv->mDev->start();
         }
         return 0;
-    }
-    return -EINVAL;
-}
-
-static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int stream_id)
-{
-    ALOGD("func: %s, device_id: %d, stream_id: %d", __func__, device_id, stream_id);
-    if (s_TvInputPriv) {
-        if (s_TvInputPriv->mDev) {
-            if (out_buffer) {
-                native_handle_close(out_buffer);
-                native_handle_delete(out_buffer);
-                out_buffer=NULL;
-            }
-            if (out_cancel_buffer) {
-                native_handle_close(out_cancel_buffer);
-                native_handle_delete(out_cancel_buffer);
-                out_cancel_buffer = nullptr;
-            }
-            s_TvInputPriv->mDev->stop();
-            s_TvInputPriv->isInitialized = false;
-            s_TvInputPriv->isOpened = false;
-            s_TvInputPriv->mDev = nullptr;
-            return 0;
-        }
     }
     return -EINVAL;
 }

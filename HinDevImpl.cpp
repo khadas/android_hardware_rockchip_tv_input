@@ -246,6 +246,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         if (mV4l2Event) {
             mV4l2Event->closePipe();
             mV4l2Event->closeEventThread();
+            mV4l2Event = nullptr;
         }
         if (mHinDevHandle >= 0) {
             close(mHinDevHandle);
@@ -266,8 +267,14 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
     if (mHinNodeInfo == NULL)
     {
         DEBUG_PRINT(3, "[%s %d] no memory for mHinNodeInfo", __FUNCTION__, __LINE__);
-        close(mHinDevHandle);
-        close(mHinDevEventHandle);
+        if (mHinDevHandle > -1) {
+            close(mHinDevHandle);
+            mHinDevHandle = -1;
+        }
+        if (mHinDevEventHandle > -1) {
+            close(mHinDevEventHandle);
+            mHinDevEventHandle = -1;
+        }
         return NO_MEMORY;
     }
     memset(mHinNodeInfo, 0, sizeof(struct HinNodeInfo));
@@ -528,15 +535,27 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     if (mHinDevHandle == mHinDevEventHandle) {
         if (get_format(0, initWidth, initHeight, initFormat) == 0) {
             DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
-            close(mHinDevHandle);
-            close(mHinDevEventHandle);
+            if (mHinDevHandle > -1) {
+                close(mHinDevHandle);
+                mHinDevHandle = -1;
+            }
+            if (mHinDevEventHandle > -1) {
+                close(mHinDevEventHandle);
+                mHinDevEventHandle = -1;
+            }
             return -1;
         }
     } else {
         if (get_csi_format(mHinDevEventHandle, initWidth, initHeight, initFormat) == 0) {
             DEBUG_PRINT(3, "[%s %d] get_format fail ", __FUNCTION__, __LINE__);
-            close(mHinDevHandle);
-            close(mHinDevEventHandle);
+            if (mHinDevHandle > -1) {
+                close(mHinDevHandle);
+                mHinDevHandle = -1;
+            }
+            if (mHinDevEventHandle > -1) {
+                close(mHinDevEventHandle);
+                mHinDevEventHandle = -1;
+            }
             return -1;
         }
     }
@@ -592,14 +611,23 @@ HinDevImpl::~HinDevImpl()
     if (mSidebandWindow) {
         mSidebandWindow->stop();
     }
-    if (mV4l2Event)
+    if (mV4l2Event) {
+        DEBUG_PRINT(3, "%s %d enter mV4l2Event release", __FUNCTION__, __LINE__);
+        mV4l2Event->closePipe();
         mV4l2Event->closeEventThread();
-    if (mHinNodeInfo)
+        mV4l2Event = nullptr;
+    }
+    if (mHinNodeInfo) {
         free (mHinNodeInfo);
-    if (mHinDevHandle >= 0)
+        mHinNodeInfo = nullptr;
+    }
+    if (mHinDevHandle > -1) {
         close(mHinDevHandle);
-    if (mHinDevEventHandle >= 0) {
+        mHinDevHandle = -1;
+    }
+    if (mHinDevEventHandle > -1) {
         close(mHinDevEventHandle);
+        mHinDevEventHandle = -1;
     }
 }
 
@@ -827,16 +855,23 @@ int HinDevImpl::stop()
     mOpen = false;
     mFrameType = 0;
 
-    if (mHinNodeInfo)
+    if (mHinNodeInfo) {
         free(mHinNodeInfo);
+        mHinNodeInfo = nullptr;
+    }
 
-    if (mV4l2Event)
+    if (mV4l2Event) {
         mV4l2Event->closePipe();
+        mV4l2Event = nullptr;
+    }
 
-    if (mHinDevHandle >= 0)
+    if (mHinDevHandle > -1) {
         close(mHinDevHandle);
-    if (mHinDevEventHandle >=0) {
+        mHinDevHandle = -1;
+    }
+    if (mHinDevEventHandle > -1) {
         close(mHinDevEventHandle);
+        mHinDevEventHandle = -1;
     }
 
     mFirstRequestCapture = true;
@@ -1329,9 +1364,13 @@ int HinDevImpl::release_buffer()
         for (int i=0; i<mBufferCount; i++) {
             if (mSidebandWindow) {
                 if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    mSidebandWindow->cancelBuffer(mHinNodeInfo->vt_buffers[i]);
-                    mHinNodeInfo->vt_buffers[i]->handle = NULL;
-                    mHinNodeInfo->vt_buffers[i] = nullptr;
+                    if (mHinNodeInfo->vt_buffers[i]) {
+                        mSidebandWindow->cancelBuffer(mHinNodeInfo->vt_buffers[i]);
+                        mHinNodeInfo->vt_buffers[i]->handle = NULL;
+                        mHinNodeInfo->vt_buffers[i] = nullptr;
+                    } else {
+                        ALOGE("%s %d vt_buffers %d is nullptr not need release", __FUNCTION__, __LINE__, i);
+                    }
                 } else {
                     mSidebandWindow->freeBuffer(&mHinNodeInfo->buffer_handle_poll[i], 0);
                     mHinNodeInfo->buffer_handle_poll[i] = NULL;
