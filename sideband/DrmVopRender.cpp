@@ -217,8 +217,12 @@ bool DrmVopRender::detect(int device)
             ALOGE("fail to get drm resources connectors, error: %s", strerror(errno));
             continue;
         }
-
+        nsecs_t startTime = systemTime();
         connector = drmModeGetConnector(mDrmFd, resources->connectors[i]);
+        long usedTime = (long)((systemTime() - startTime)/1000000);
+        if (usedTime > 2000) {
+            ALOGD("%s ===========timeout===========%ld", __FUNCTION__, usedTime);
+        }
         if (!connector) {
             ALOGE("drmModeGetConnector failed");
             continue;
@@ -359,6 +363,10 @@ bool DrmVopRender::detect(int device)
 
     if (output->mDrmModeInfos.empty()) {
         ALOGD("final mDrmModeInfos is empty");
+        for (int i = 0; i < mDisplayInfos.size(); i++) {
+            ALOGE("empty drmmodeinfo force set connected false");
+            mDisplayInfos[i].connected = false;
+        }
     } else {
         int last_crtc_id = -1;
         int total_crtc_id_num = 0;
@@ -367,7 +375,12 @@ bool DrmVopRender::detect(int device)
                 int crtc_id = output->mDrmModeInfos[i].crtc->crtc_id;
                 total_crtc_id_num++;
                 ALOGD("final  crtc->crtc_id %d %s", crtc_id, output->mDrmModeInfos[i].crtc_plane_mask);
+                nsecs_t startTime = systemTime();
                output->mDrmModeInfos[i].props = drmModeObjectGetProperties(mDrmFd, output->mDrmModeInfos[i].crtc->crtc_id, DRM_MODE_OBJECT_CRTC);
+                long usedTime = (long)((systemTime() - startTime)/1000000);
+                if (usedTime > 2000) {
+                    ALOGD("%s ===========timeout===========%ld", __FUNCTION__, usedTime);
+                }
                if (!output->mDrmModeInfos[i].props) {
                    ALOGE("Failed to found props crtc[%d] %s\n", output->mDrmModeInfos[i].crtc->crtc_id, strerror(errno));
                }
