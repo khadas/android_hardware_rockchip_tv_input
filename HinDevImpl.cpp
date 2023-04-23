@@ -741,6 +741,8 @@ int HinDevImpl::start()
                 mSignalPreviewHandle, V4L2_PIX_FMT_NV12,
                 mSrcFrameWidth, mSrcFrameHeight, _ALIGN(mSrcFrameWidth, 64), mSrcFrameHeight);
         }
+        mDstFrameWidth = mSrcFrameWidth;
+        mDstFrameHeight = mSrcFrameHeight;
         initPqInfo(PQ_NORMAL);
     }
 
