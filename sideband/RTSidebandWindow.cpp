@@ -338,64 +338,43 @@ status_t RTSidebandWindow::flushCache(buffer_handle_t buffer) {
     }
     return mBuffMgr->FlushCache(buffer);
 }
-status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
-    buffer_handle_t temp_buffer = NULL;
-    uint32_t stride = 0;
-    int ret = -1;
 
-    ret = mBuffMgr->Allocate(mSidebandInfo.width,
-                        mSidebandInfo.height,
-                        mSidebandInfo.format,
-                        mSidebandInfo.usage,
-                        common::GRALLOC,
-                        &temp_buffer,
-                        &stride);
-    if (!temp_buffer) {
-        DEBUG_PRINT(3, "RTSidebandWindow::allocateBuffer mBuffMgr->Allocate failed !!!");
-    } else {
-        *buffer = temp_buffer;
-        ret = 0;
-    }
-    
-    return ret;
+status_t RTSidebandWindow::allocateBuffer(buffer_handle_t *buffer) {
+    return allocateSidebandHandle(buffer,
+        mSidebandInfo.width,
+        mSidebandInfo.height,
+        mSidebandInfo.format,
+        mSidebandInfo.usage);
 }
 
 status_t RTSidebandWindow::allocateSidebandHandle(buffer_handle_t *handle,
         int width, int32_t height, int32_t format, uint64_t usage) {
+    GraphicBufferAllocator &allocator = GraphicBufferAllocator::get();
     buffer_handle_t temp_buffer = NULL;
-    uint32_t stride = 0;
-    int ret = -1;
+    uint32_t outStride = 0;
 
-    ret = mBuffMgr->Allocate(-1 == width?mSidebandInfo.width:width,
+    status_t err = allocator.allocate(-1 == width?mSidebandInfo.width:width,
                         -1 == height?mSidebandInfo.height:height,
                         -1 == format?mSidebandInfo.format:format,
+                        1,
                         -1 == usage?0:usage,
-                        common::GRALLOC,
                         &temp_buffer,
-                        &stride);
+                        &outStride,
+                        0,
+                        std::move("tif_allocate"));
     if (!temp_buffer) {
-        DEBUG_PRINT(3, "RTSidebandWindow::allocateSidebandHandle mBuffMgr->Allocate failed !!!");
+        DEBUG_PRINT(3, "allocate failed !!!");
     } else {
         *handle = temp_buffer;
-        ret = 0;
+        err = 0;
     }
-    return ret;
+    return err;
 }
 
 status_t RTSidebandWindow::freeBuffer(buffer_handle_t *buffer, int type) {
     DEBUG_PRINT(3, "%s in type = %d", __FUNCTION__, type);
-    // android::Mutex::Autolock _l(mLock);
-    // type: 1 mean no register
-    if (type == 0) {
-        if (*buffer) {
-            mBuffMgr->Free(*buffer);
-        }
-    } else {
-        if (*buffer) {
-            mBuffMgr->FreeLocked(*buffer);
-        }
-    }
-
+    GraphicBufferAllocator &allocator = GraphicBufferAllocator::get();
+    allocator.free(*buffer);
     return 0;
 }
 
