@@ -300,6 +300,11 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
             s_TvInputPriv->isOpened = false;
             delete s_TvInputPriv->mDev;
             s_TvInputPriv->mDev = nullptr;
+            if (device_id < 0 && stream_id == 0) {
+                ALOGD("func: %s,invail device_id: %d, stream_id: %d return -EINVAL",
+                    __func__, device_id, stream_id);
+                return -EINVAL;
+            }
             return 0;
         }
     }
@@ -309,7 +314,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
 static int tv_input_open_stream(struct tv_input_device *dev, int device_id, tv_stream_t *stream)
 {
     ALOGD("%s called", __func__);
-    return 0;
+    return -EINVAL;
 }
 
 static int tv_input_open_stream_ext(struct tv_input_device *dev, int device_id, tv_stream_ext_t *stream)
