@@ -246,7 +246,7 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
         if (mV4l2Event) {
             mV4l2Event->closePipe();
             mV4l2Event->closeEventThread();
-            mV4l2Event = nullptr;
+            //mV4l2Event = nullptr;
         }
         if (mHinDevHandle >= 0) {
             close(mHinDevHandle);
