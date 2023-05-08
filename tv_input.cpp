@@ -298,7 +298,7 @@ static int tv_input_close_stream(struct tv_input_device *dev, int device_id, int
             s_TvInputPriv->mDev->stop();
             s_TvInputPriv->isInitialized = false;
             s_TvInputPriv->isOpened = false;
-            delete s_TvInputPriv->mDev;
+            //delete s_TvInputPriv->mDev;
             s_TvInputPriv->mDev = nullptr;
             return 0;
         }

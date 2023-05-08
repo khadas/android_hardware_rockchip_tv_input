@@ -619,7 +619,7 @@ HinDevImpl::~HinDevImpl()
     }
     if (mHinNodeInfo) {
         free (mHinNodeInfo);
-        mHinNodeInfo = nullptr;
+        //mHinNodeInfo = nullptr;
     }
     if (mHinDevHandle > -1) {
         close(mHinDevHandle);
@@ -859,7 +859,7 @@ int HinDevImpl::stop()
 
     if (mHinNodeInfo) {
         free(mHinNodeInfo);
-        mHinNodeInfo = nullptr;
+        //mHinNodeInfo = nullptr;
     }
 
     if (mV4l2Event) {
