@@ -2135,6 +2135,7 @@ int HinDevImpl::pqBufferThread() {
         usleep(500);
         return NO_ERROR;
     }
+    {
     Mutex::Autolock autoLock(mBufferLock);
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     int pqMode = PQ_OFF;
@@ -2241,6 +2242,7 @@ int HinDevImpl::pqBufferThread() {
                 mPqBuffOutIndex = 0;
             }
         }
+    }
     }
     usleep(500);
 
