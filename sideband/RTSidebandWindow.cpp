@@ -275,6 +275,7 @@ status_t RTSidebandWindow::dequeueBuffer(vt_buffer_t **buffer, int timeout_ms, i
     {
         android::Mutex::Autolock _l(mLock);
         if (mBufferQueue.size() < mSidebandInfo.buffer_cnt) {
+            ALOGW("%s %d do allocateBuffer", __FUNCTION__, __LINE__);
             err = allocateBuffer(buffer);
             if (err == 0) {
                 mBufferQueue.push_back(*buffer);

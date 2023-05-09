@@ -96,75 +96,6 @@ static size_t getBufSize(int format, int width, int height)
     return buf_size;
 }
 
-static void two_bytes_per_pixel_memcpy_align32(unsigned char *dst, unsigned char *src, int width, int height)
-{
-        int stride = (width + 31) & ( ~31);
-        int h;
-        for (h=0; h<height; h++)
-        {
-                memcpy( dst, src, width*2);
-                dst += width*2;
-                src += stride*2;
-        }
-}
-
-static void nv21_memcpy_align32(unsigned char *dst, unsigned char *src, int width, int height)
-{
-        int stride = (width + 31) & ( ~31);
-        int h;
-        for (h=0; h<height*3/2; h++)
-        {
-                memcpy( dst, src, width);
-                dst += width;
-                src += stride;
-        }
-}
-
-static void yv12_memcpy_align32(unsigned char *dst, unsigned char *src, int width, int height)
-{
-        int new_width = (width + 63) & ( ~63);
-        int stride;
-        int h;
-        for (h=0; h<height; h++)
-        {
-                memcpy( dst, src, width);
-                dst += width;
-                src += new_width;
-        }
-
-        stride = ALIGN(width/2, 16);
-        for (h=0; h<height; h++)
-        {
-                memcpy( dst, src, width/2);
-                dst += stride;
-                src += new_width/2;
-        }
-}
-
-static void rgb24_memcpy_align32(unsigned char *dst, unsigned char *src, int width, int height)
-{
-        int stride = (width + 31) & ( ~31);
-        int  h;
-        for (h=0; h<height; h++)
-        {
-                memcpy( dst, src, width*3);
-                dst += width*3;
-                src += stride*3;
-        }
-}
-
-static void rgb32_memcpy_align32(unsigned char *dst, unsigned char *src, int width, int height)
-{
-        int stride = (width + 31) & ( ~31);
-        int h;
-        for (h=0; h<height; h++)
-        {
-                memcpy( dst, src, width*4);
-                dst += width*4;
-                src += stride*4;
-        }
-}
-
 static int  getNativeWindowFormat(int format)
 {
     int nativeFormat = -1;//HAL_PIXEL_FORMAT_YCbCr_422_I;
@@ -223,9 +154,6 @@ HinDevImpl::HinDevImpl()
     property_get(TV_INPUT_DEBUG_DUMP, prop_value, "0");
     mEnableDump = (int)atoi(prop_value);
 
-    property_get(TV_INPUT_SHOW_FPS, prop_value, "0");
-    mShowFps = (int)atoi(prop_value);
-
     property_get(TV_INPUT_HDMIIN_TYPE, prop_value, "0");
     mHdmiInType = (int)atoi(prop_value);
 
@@ -281,11 +209,11 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
     mHinNodeInfo->currBufferHandleIndex = 0;
     mHinNodeInfo->currBufferHandleFd = 0;
 
-    mFramecount = 0;
     mNotifyQueueCb = NULL;
     mState = STOPED;
     mANativeWindow = NULL;
     mQbufCount = 0;
+    mIsLastPqShowFrameMode = false;
     if (mWorkThread != NULL) {
         DEBUG_PRINT(3, "[%s %d] mWorkThread not null, need thread exit", __FUNCTION__, __LINE__);
         mWorkThread->requestExit();
@@ -639,12 +567,10 @@ int HinDevImpl::start_device()
         mRequestCaptureCount = 0;
         mFirstRequestCapture = true;
     }
-    int ret = -1;
-
     DEBUG_PRINT(1, "[%s %d] mHinDevHandle:%x", __FUNCTION__, __LINE__, mHinDevHandle);
 
-    ret = get_extfmt_info();
-    ret = ioctl(mHinDevHandle, VIDIOC_QUERYCAP, &mHinNodeInfo->cap);
+    get_extfmt_info();
+    int ret = ioctl(mHinDevHandle, VIDIOC_QUERYCAP, &mHinNodeInfo->cap);
     if (ret < 0) {
         DEBUG_PRINT(3, "VIDIOC_QUERYCAP Failed, error: %s", strerror(errno));
         return ret;
@@ -766,8 +692,7 @@ int HinDevImpl::start()
 
     ALOGD("Create Work Thread");
 
-    std::string g_stream_dev_name = "/dev/video17";
-
+    //std::string g_stream_dev_name = "/dev/video17";
     //if (g_stream_dev_name.length() > 0 && mHasEncode) {
     /*if (g_stream_dev_name.length() > 0) {
         init_encodeserver(g_stream_dev_name.c_str(), mSrcFrameWidth, mSrcFrameHeight);
@@ -812,6 +737,7 @@ int HinDevImpl::stop()
     }
     property_set(TV_INPUT_HDMIIN, "0");
     Mutex::Autolock autoLock(mBufferLock);
+    ALOGD("%s %d enter mBufferLock", __FUNCTION__, __LINE__);
 
     if(gMppEnCodeServer != nullptr) {
         ALOGD("zj add file: %s func %s line %d \n",__FILE__,__FUNCTION__,__LINE__);
@@ -841,6 +767,26 @@ int HinDevImpl::stop()
     if (mRkiep!=nullptr) {
          delete mRkiep;
          mRkiep = nullptr;
+    }
+
+    if (!mPqPrepareList.empty()) {
+        DEBUG_PRINT(3, "clear mPqPrepareList");
+        mPqPrepareList.clear();
+    }
+
+    if (!mPqDoneList.empty()) {
+        DEBUG_PRINT(3, "clear mPqDoneList");
+        mPqDoneList.clear();
+    }
+
+    if (!mIepPrepareList.empty()) {
+        DEBUG_PRINT(3, "clear mIepPrepareList");
+        mIepPrepareList.clear();
+    }
+
+    if (!mIepDoneList.empty()) {
+        DEBUG_PRINT(3, "clear mIepDoneList");
+        mIepDoneList.clear();
     }
 
     if (mFrameType & TYPE_SIDEBAND_WINDOW) {
@@ -1109,29 +1055,6 @@ int HinDevImpl::set_format(int width, int height, int color_format)
     return ret;
 }
 
-int HinDevImpl::set_rotation(int degree)
-{
-    ALOGD("[%s %d]", __FUNCTION__, __LINE__);
-    int ret = 0;
-    struct v4l2_control ctl;
-    if(mHinDevHandle<0)
-        return -1;
-    if((degree!=0)&&(degree!=90)&&(degree!=180)&&(degree!=270)){
-        DEBUG_PRINT(3, "Set rotate value invalid: %d.", degree);
-        return -1;
-    }
-
-    memset( &ctl, 0, sizeof(ctl));
-    ctl.value=degree;
-    ctl.id = V4L2_ROTATE_ID;
-    ret = ioctl(mHinDevHandle, VIDIOC_S_CTRL, &ctl);
-
-    if(ret<0){
-        DEBUG_PRINT(3, "Set rotate value fail: %s. ret=%d", strerror(errno),ret);
-    }
-    return ret ;
-}
-
 int HinDevImpl::set_crop(int x, int y, int width, int height)
 {
     ALOGD("[%s %d] crop [%d - %d -%d - %d]", __FUNCTION__, __LINE__, x, y, width, height);
@@ -1157,46 +1080,6 @@ int HinDevImpl::set_frame_rate(int frameRate)
     if(ret < 0){
         DEBUG_PRINT(3, "Set frame rate fail: %s. ret=%d", strerror(errno),ret);
     }
-    return ret ;
-}
-
-int HinDevImpl::get_hin_crop(int *x, int *y, int *width, int *height)
-{
-    ALOGD("[%s %d]", __FUNCTION__, __LINE__);
-    int ret = 0;
-
-    struct v4l2_crop crop;
-    memset(&crop, 0, sizeof(struct v4l2_crop));
-    crop.type = V4L2_BUF_TYPE_VIDEO_OVERLAY;
-    ret = ioctl(mHinDevHandle, VIDIOC_S_CROP, &crop);
-    if (ret) {
-        DEBUG_PRINT(3, "get amlvideo2 crop  fail: %s. ret=%d", strerror(errno),ret);
-    }
-    *x = crop.c.left;
-    *y = crop.c.top;
-    *width = crop.c.width;
-    *height = crop.c.height;
-     return ret ;
-}
-
-int HinDevImpl::set_hin_crop(int x, int y, int width, int height)
-{
-    ALOGD("[%s %d]", __FUNCTION__, __LINE__);
-    int ret = 0;
-
-    struct v4l2_crop crop;
-    memset(&crop, 0, sizeof(struct v4l2_crop));
-
-    crop.type = TVHAL_V4L2_BUF_TYPE;
-    crop.c.left = x;
-    crop.c.top = y;
-    crop.c.width = width;
-    crop.c.height = height;
-    ret = ioctl(mHinDevHandle, VIDIOC_S_CROP, &crop);
-    if (ret) {
-        DEBUG_PRINT(3, "Set amlvideo2 crop  fail: %s. ret=%d", strerror(errno),ret);
-    }
-
     return ret ;
 }
 
@@ -1239,17 +1122,6 @@ int HinDevImpl::get_current_sourcesize(int& width,  int& height,int& pixelformat
        mState = START;
     }*/
     mState = START;
-    return ret;
-}
-
-int HinDevImpl::set_screen_mode(int mode)
-{
-    int ret = NO_ERROR;
-    ret = ioctl(mHinDevHandle, VIDIOC_S_OUTPUT, &mode);
-    if (ret < 0) {
-        DEBUG_PRINT(3, "VIDIOC_S_OUTPUT Failed: %s", strerror(errno));
-        return ret;
-    }
     return ret;
 }
 
@@ -1358,7 +1230,7 @@ int HinDevImpl::release_buffer()
         mPqBufferHandle.clear();
     }
 
-    if (mUseIep && !mIepBufferHandle.empty()) {
+    if (!mIepBufferHandle.empty()) {
         for (int i=0; i<mIepBufferHandle.size(); i++) {
             mSidebandWindow->freeBuffer(&mIepBufferHandle[i].srcHandle, 1);
             mIepBufferHandle[i].srcHandle = NULL;
@@ -1371,6 +1243,18 @@ int HinDevImpl::release_buffer()
             }
         }
         mIepBufferHandle.clear();
+
+        if (mIepTempHandle.srcHandle != NULL) {
+            mSidebandWindow->freeBuffer(&mIepTempHandle.srcHandle, 1);
+            mIepTempHandle.srcHandle = NULL;
+        }
+        if (mIepTempHandle.outHandle != NULL) {
+            mSidebandWindow->freeBuffer(&mIepTempHandle.outHandle, 1);
+            mIepTempHandle.outHandle = NULL;
+        }
+        if (mIepTempHandle.out_vt_buffer != nullptr) {
+            mSidebandWindow->freeBuffer(&mIepTempHandle.out_vt_buffer);
+        }
     }
 
     if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
@@ -1457,7 +1341,6 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
         }
     }
 
-    int bufferIndex = -1;
     int requestFd = -1;
     /*for (int i=0; i<mBufferCount; i++) {
         int fd = mHinNodeInfo->bufferArray[i].m.planes[0].m.fd;
@@ -1467,7 +1350,7 @@ int HinDevImpl::request_capture(buffer_handle_t rawHandle, uint64_t bufferId) {
             break;
         }
     }*/
-    bufferIndex = previewBufferIndex;
+    int bufferIndex = previewBufferIndex;
 
     DEBUG_PRINT(mDebugLevel, "request_capture previewBufferIndex=%d, bufferIndex=%d, requestFd=%d, bufferId %" PRIu64,
         previewBufferIndex, bufferIndex, requestFd, bufferId);
@@ -1757,7 +1640,7 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
        }
        mDstColorSpace = color_space;
        mUpdateColorSpace = true;
-       if (!mPqBufferHandle.empty()) {
+       if (!(mFrameType & TYPE_SIDEBAND_VTUNNEL) && !mPqBufferHandle.empty()) {
           for (int i=0; i<mPqBufferHandle.size(); i++) {
               //mSidebandWindow->freeBuffer(&mPqBufferHandle[i].srcHandle, 1);
               mPqBufferHandle[i].srcHandle = NULL;
@@ -1774,6 +1657,14 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
     } else if(mPqMode == PQ_OFF) {
         if (mPqBufferHandle.empty()) {
             mPqBufferHandle.resize(SIDEBAND_PQ_BUFF_CNT);
+            if (!mPqPrepareList.empty()) {
+                DEBUG_PRINT(3, "clear mPqPrepareList");
+                mPqPrepareList.clear();
+            }
+            if (!mPqDoneList.empty()) {
+                DEBUG_PRINT(3, "clear mPqDoneList");
+                mPqDoneList.clear();
+            }
             for (int i=0; i<mPqBufferHandle.size(); i++) {
                 if (mFrameType & TYPE_SIDEBAND_WINDOW) {
                     mSidebandWindow->allocateSidebandHandle(&mPqBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
@@ -1782,16 +1673,15 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                     mSidebandWindow->allocateBuffer(&mPqBufferHandle[i].out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
                         HAL_PIXEL_FORMAT_YCBCR_444_888,
                         RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
+                    mPqPrepareList.push_back(i);
                 }
             }
             ALOGD("%s all pqbufferhandle", __FUNCTION__);
         }
-        for (int i=0; i<mPqBufferHandle.size(); i++) {
-            mPqBufferHandle[i].isFilled = false;
-        }
 
         if (mUseIep) {
             if (mIepBufferHandle.empty()) {
+                DEBUG_PRINT(3, "mIepBufferHandle empty, init it");
                 mIepBufferHandle.resize(SIDEBAND_IEP_BUFF_CNT);
                 for (int i=0; i<mIepBufferHandle.size(); i++) {
                     mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].srcHandle, mDstFrameWidth, mDstFrameHeight,
@@ -1805,9 +1695,23 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                             RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
                     }
                 }
+                if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                    mSidebandWindow->allocateBuffer(&mIepTempHandle.out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
+                            HAL_PIXEL_FORMAT_YCrCb_NV12,
+                            RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
+                }
+            }
+            if (!mIepPrepareList.empty()) {
+                DEBUG_PRINT(3, "clear mIepPrepareList");
+                mIepPrepareList.clear();
+            }
+            if (!mIepDoneList.empty()) {
+                DEBUG_PRINT(3, "clear mIepDoneList");
+                mIepDoneList.clear();
             }
             for (int i=0; i<mIepBufferHandle.size(); i++) {
                 mIepBufferHandle[i].isFilled = false;
+                mIepPrepareList.push_back(i);
             }
             mIepBuffIndex = 0;
             mIepBuffOutIndex = 0;
@@ -1965,7 +1869,7 @@ int HinDevImpl::deal_priv_message(const std::string action, const std::map<std::
             }
         } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
             stopRecord();
-            showVTTunnel(mSignalVTBuffer);
+            showVTunnel(mSignalVTBuffer);
         } else if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
             stopRecord();
             wrapCaptureResultAndNotify(0,
@@ -2033,7 +1937,6 @@ void HinDevImpl::buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int src
 
 int HinDevImpl::workThread()
 {
-    int ret;
     pthread_t tid=0;
     if (mState == START /*&& !mFirstRequestCapture*/ && mRequestCaptureCount > 0) {
         //DEBUG_PRINT(3, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
@@ -2048,6 +1951,7 @@ int HinDevImpl::workThread()
             mRequestCaptureCount--;
         }
 
+        int ret;
         int ts;
         fd_set fds;
         struct timeval tv;
@@ -2069,6 +1973,7 @@ int HinDevImpl::workThread()
         int currDqbufHandleIndex = mHinNodeInfo->currBufferHandleIndex;
         int currentDqBufFd = 0;
         if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            DEBUG_PRINT(mDebugLevel, "start VIDIOC_DQBUF");
             ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mCurrentBufferArray);
         } else {
             ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[currDqbufHandleIndex]);
@@ -2121,27 +2026,21 @@ int HinDevImpl::workThread()
             }
         }
         mSidebandWindow->setDebugLevel(mDebugLevel);
-        if (mFrameType & TYPE_SIDEBAND_WINDOW || mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+        if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             // add flushCache to prevent image tearing and ghosting caused by
             // cache consistency issues
-            if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             ret = mSidebandWindow->flushCache(
                 mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex]);
             if (ret != 0) {
                 DEBUG_PRINT(3, "mSidebandWindow->flushCache failed !!!");
                 return ret;
             }
-            }
 
             if (mPqMode != PQ_OFF && !mPqBufferHandle.empty()) {
                 if (mPqBufferHandle[mPqBuffIndex].isFilled) {
                     DEBUG_PRINT(mDebugLevel, "skip pq buffer");
                 } else {
-                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                        mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex];
-                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                        mPqBufferHandle[mPqBuffIndex].src_vt_fd = mHinNodeInfo->bufferArray[currDqbufHandleIndex].m.planes[0].m.fd;
-                    }
+                    mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex];
                     mPqBufferHandle[mPqBuffIndex].isFilled = true;
                     mPqBuffIndex++;
                     if (mPqBuffIndex == SIDEBAND_PQ_BUFF_CNT) {
@@ -2162,11 +2061,7 @@ int HinDevImpl::workThread()
                     if (mDebugLevel == 3) {
                         ALOGE("sidebandwindow show index=%d", currDqbufHandleIndex);
                     }
-                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                        mSidebandWindow->show(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mDisplayRatio, mHdmiInType);
-                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                        showVTTunnel(mHinNodeInfo->vt_buffers[currDqbufHandleIndex]);
-                    }
+                    mSidebandWindow->show(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mDisplayRatio, mHdmiInType);
                 }
             }
 
@@ -2224,6 +2119,61 @@ int HinDevImpl::workThread()
             } else {
                 DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF %d successful.", currDqbufHandleIndex);
             }
+        } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            if (mSkipFrame > 0) {
+                ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[currDqbufHandleIndex]);
+                mSkipFrame--;
+                DEBUG_PRINT(3, "mSkipFrame not to show %d", mSkipFrame);
+                return NO_ERROR;
+            }
+            bool showPqFrame = false;
+            if (mPqMode != PQ_OFF && needShowPqFrame(mPqMode)) {
+                nsecs_t startTime = systemTime();
+                bool fillFinish = false;
+                while (mState == START && !fillFinish && mPqMode != PQ_OFF) {
+                    {
+                        Mutex::Autolock autoLock(mBufferLock);
+                        DEBUG_PRINT(mDebugLevel, "enter mBufferLock mPqMode=%d", mPqMode);
+                        if (mPqMode != PQ_OFF && !mPqPrepareList.empty()) {
+                            for (int i = 0; i < mPqPrepareList.size(); i++) {
+                                int pqBufIndex = mPqPrepareList[i];
+                                if (!mPqBufferHandle[pqBufIndex].isFilled) {
+                                    mPqBufferHandle[pqBufIndex].src_vt_fd = currentDqBufFd;
+                                    mPqBufferHandle[pqBufIndex].isFilled = true;
+                                    DEBUG_PRINT(mDebugLevel, "===find mPqPrepareList listIndex=%d, pqBufIndex=%d, src_vt_fd=%d===",
+                                        i, pqBufIndex, mPqBufferHandle[pqBufIndex].src_vt_fd);
+                                    fillFinish = true;
+                                    showPqFrame = needShowPqFrame(mPqMode);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (fillFinish) {
+                        break;
+                    }
+                    usleep(1000);
+                    long waitTime = (long)((systemTime() - startTime)/1000000);
+                    if (waitTime > 10) {
+                        DEBUG_PRINT(3, "wait availe mPqPrepareList waitTime=%ld", waitTime);
+                    }
+                }
+            } else if (mPqMode != PQ_OFF) {
+                if (mPqBufferHandle[mPqBuffIndex].isFilled) {
+                    DEBUG_PRINT(mDebugLevel, "skip pq luma buffer");
+                } else {
+                    mPqBufferHandle[mPqBuffIndex].src_vt_fd = currentDqBufFd;
+                    mPqBufferHandle[mPqBuffIndex].isFilled = true;
+                    mPqBuffIndex++;
+                    if (mPqBuffIndex == SIDEBAND_PQ_BUFF_CNT) {
+                        mPqBuffIndex = 0;
+                    }
+                }
+            }
+            if (!showPqFrame && mState == START) {
+                DEBUG_PRINT(mDebugLevel, "sidebandwindow show index=%d", currDqbufHandleIndex);
+                showVTunnel(mHinNodeInfo->vt_buffers[currDqbufHandleIndex]);
+            }
         } else {
             if (mV4L2DataFormatConvert) {
                 mSidebandWindow->buffDataTransfer(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
@@ -2237,7 +2187,6 @@ int HinDevImpl::workThread()
                     mPreviewRawHandle[currDqbufHandleIndex].outHandle, false);
             }
         }
-        debugShowFPS();
         mHinNodeInfo->currBufferHandleIndex++;
     } else {
         usleep(500);
@@ -2245,39 +2194,118 @@ int HinDevImpl::workThread()
     return NO_ERROR;
 }
 
-int HinDevImpl::showVTTunnel(vt_buffer_t* vt_buffer) {
+bool HinDevImpl::needShowPqFrame(int pqMode) {
+    if ((pqMode & PQ_LF_RANGE) == PQ_LF_RANGE
+            || (pqMode & PQ_NORMAL) == PQ_NORMAL) {
+        DEBUG_PRINT(mDebugLevel, "pqMode %d", pqMode);
+        return true;
+    }
+    return false;
+}
+
+bool HinDevImpl::qBuf(int fd, bool noFoundLog) {
+    if (mState != START || fd < 0) {
+        return true;
+    }
+    for (int i=0; i < SIDEBAND_WINDOW_BUFF_CNT; i++) {
+        if (fd == mHinNodeInfo->bufferArray[i].m.planes[0].m.fd) {
+            int ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[i]);
+            if (ret != 0) {
+                ALOGE("%s %d VIDIOC_QBUF index=%d, fd=%d failed %s", __FUNCTION__, __LINE__, i, fd, strerror(errno));
+                return false;
+            } else {
+                DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF index=%d, fd=%d successful.", i, fd);
+                return true;
+            }
+        }
+    }
+    if (noFoundLog) {
+        ALOGE("%s not do VIDIOC_QBUF with fd=%d", __FUNCTION__, fd);
+    }
+    return false;
+}
+
+void HinDevImpl::showVTunnel(vt_buffer_t* vt_buffer) {
     if (vt_buffer == nullptr) {
         ALOGE("%s buffer is nullptr", __FUNCTION__);
-        return 0;
+        return;
     }
-    int displayDqbufFd = 0;
     int ret = 0;
+    if (mDebugLevel == 3) {
+        ALOGW("%s %d vtQueueFd=%d", __FUNCTION__, __LINE__, vt_buffer->handle->data[0]);
+    }
     ret = mSidebandWindow->queueBuffer(vt_buffer, -1, 0);
+    if (mState != START) {
+        ALOGE("%s after vtunnel queueBuffer mState != START", __FUNCTION__);
+        return;
+    }
     mQbufCount++;
+    DEBUG_PRINT(mDebugLevel, "queueBuffer ret=%d, mQbufCount=%d", ret, mQbufCount);
     if (mQbufCount > 2) {
         vt_buffer_t *vtBuf;
         //memset(vtBuf, 0, sizeof(vt_buffer_t));
         int fence_id = -1;
-        int timeout_ms = 100;
-        nsecs_t startDqbufTime = 0;
-        if (mDebugLevel == 3) {
-            startDqbufTime = systemTime();
-        }
+        int vtDqbufFd = -1;
+        int timeout_ms = 1000;
+        nsecs_t startDqbufTime = systemTime();
         ret = mSidebandWindow->dequeueBuffer(&vtBuf, timeout_ms, &fence_id);
-        if (mDebugLevel == 3) {
-            nsecs_t endDqbufTime = systemTime();
-            nsecs_t usedDqbufTime = endDqbufTime - startDqbufTime;
-            if (vtBuf && vtBuf->handle) {
-                displayDqbufFd = vtBuf->handle->data[0];
-            } else {
-                ALOGE("%s not find displayDqbufFd dqbuf ret=%d", __FUNCTION__, ret);
+        /*if (ret < 0) {
+            long usedDqBufTime = (long)((systemTime() - startDqbufTime)/1000000);
+            DEBUG_PRINT(3, "dqBuf failed ret=%d, usedDqBufTime=%ld", ret, usedDqBufTime);
+            if (usedDqBufTime >= timeout_ms) {
+                while (ret < 0 && mState == START) {
+                    ret = mSidebandWindow->dequeueBuffer(&vtBuf, timeout_ms, &fence_id);
+                }
             }
-            ALOGE("%s displayDqbufFd=%d, ret=%d, usedDqbufTime=%ld",
-                __FUNCTION__, displayDqbufFd, ret, (long)usedDqbufTime);
+        }*/
+        if (ret >= 0 && vtBuf && vtBuf->handle) {
+            vtDqbufFd = vtBuf->handle->data[0];
+            if (mDebugLevel == 3) {
+                ALOGE("%s vtDqbufFd=%d, ret=%d, usedDqBufTime=%ld",
+                    __FUNCTION__, vtDqbufFd, ret, (long)((systemTime() - startDqbufTime)/1000000));
+            }
+        } else {
+            DEBUG_PRINT(3, "dqBuf but not find displayDqbufFd ret=%d, usedDqBufTime=%ld",
+                ret, (long)((systemTime() - startDqbufTime)/1000000));
         }
         mQbufCount--;
+
+        if (qBuf(vtDqbufFd, false)) {
+            return;
+        }
+        if (mState == START && vtDqbufFd > -1 && !mPqDoneList.empty()) {
+            for (int i = 0; i < mPqDoneList.size(); i++) {
+                int pqBufIndex = mPqDoneList[i];
+                if (vtDqbufFd == mPqBufferHandle[pqBufIndex].out_vt_buffer->handle->data[0]) {
+                    DEBUG_PRINT(mDebugLevel, "pqDoneList listIndex=%d, pqBufIndex=%d, fd=%d to pqPrepareList",
+                        i, pqBufIndex, vtDqbufFd);
+                    //mPqDoneList[i].src_vt_fd;
+                    mPqBufferHandle[pqBufIndex].src_vt_fd = -1;
+                    mPqBufferHandle[pqBufIndex].isFilled = false;
+                    mPqDoneList.erase(mPqDoneList.begin() + i);
+                    mPqPrepareList.push_back(pqBufIndex);
+                    return;
+                }
+            }
+        }
+        if (mState == START && vtDqbufFd > -1 && !mIepDoneList.empty()) {
+            for (int i = 0; i < mIepDoneList.size(); i++) {
+                int iepBufIndex = mIepDoneList[i];
+                if (vtDqbufFd == mIepBufferHandle[iepBufIndex].out_vt_buffer->handle->data[0]) {
+                    DEBUG_PRINT(mDebugLevel, "iepDoneList listIndex=%d, iepBufIndex=%d, fd=%d to iepPreparelist",
+                        i, iepBufIndex, vtDqbufFd);
+                    //mIepDoneList[i].src_vt_fd = -1;
+                    mIepDoneList.erase(mIepDoneList.begin() + i);
+                    mIepPrepareList.push_back(iepBufIndex);
+                    return;
+                }
+            }
+        }
+        if (mState != START || vtDqbufFd < 0 || ret != 0) {
+            DEBUG_PRINT(3, "warn or err mState=%d, vtDqbufFd=%d, ret=%d", mState, vtDqbufFd, ret);
+            return;
+        }
     }
-    return displayDqbufFd;
 }
 
 int HinDevImpl::pqBufferThread() {
@@ -2293,12 +2321,15 @@ int HinDevImpl::pqBufferThread() {
             mDumpFrameCount = dumpFrameCount;
         }
     }
-    if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER) {
+    if (mFrameType & TYPE_STREAM_BUFFER_PRODUCER || mState != START) {
         usleep(500);
         return NO_ERROR;
     }
     {
     Mutex::Autolock autoLock(mBufferLock);
+    if (mState != START) {
+        return NO_ERROR;
+    }
     char prop_value[PROPERTY_VALUE_MAX] = {0};
     int pqMode = PQ_OFF;
     int value = 0;
@@ -2352,14 +2383,86 @@ int HinDevImpl::pqBufferThread() {
         mUpdateColorSpace = false;
     }
     if (mPqMode != pqMode || mOutRange != mLastOutRange) {
+        bool isPqShowFrameMode = needShowPqFrame(pqMode);
+        if (mIsLastPqShowFrameMode && !isPqShowFrameMode) {
+            DEBUG_PRINT(3, "start queue all buf from mPqPrepareList");
+            if (!mPqPrepareList.empty()) {
+                for (int i = 0; i < mPqPrepareList.size(); i++) {
+                    int pqBufIndex = mPqPrepareList[i];
+                    if (mPqBufferHandle[pqBufIndex].isFilled) {
+                        qBuf(mPqBufferHandle[pqBufIndex].src_vt_fd, true);
+                    }
+                }
+                /*done list will push_back, so reset or clear mPqPrepareList may cause num uncorrect
+                  Do not execute the following code:
+                  mPqPrepareList.clear();
+                */
+            }
+            DEBUG_PRINT(3, "end queue all buf from mPqPrepareList");
+        } else if (!mIsLastPqShowFrameMode && isPqShowFrameMode) {
+            DEBUG_PRINT(3, "start reset mPqBufferHandle fill status");
+            if (!mPqBufferHandle.empty()) {
+                for (int i=0; i < mPqBufferHandle.size(); i++) {
+                    mPqBufferHandle[i].isFilled = false;
+                }
+            }
+            DEBUG_PRINT(3, "end reset mPqBufferHandle fill status");
+            if (mUseIep) {
+                if (!mPqDoneList.empty()) {
+                    DEBUG_PRINT(3, "clear mPqDoneList with iep");
+                    mPqDoneList.clear();
+                }
+            }
+        }
+        mIsLastPqShowFrameMode = isPqShowFrameMode;
+
         map<string, string> pqData;
         pqData.clear();
         pqData.insert({"mode", to_string(pqMode)});
         doPQCmd(pqData);
     }
 
-    if (mState == START) {
-        if (mPqMode != PQ_OFF && !mPqBufferHandle.empty() && mPqBufferHandle[mPqBuffOutIndex].isFilled) {
+    if (mState == START && mPqMode != PQ_OFF && !mPqBufferHandle.empty()) {
+        if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            if (mPqMode == PQ_CACL_LUMA) {
+                if (mPqBufferHandle[mPqBuffOutIndex].isFilled) {
+                    DEBUG_PRINT(mDebugLevel, "dopq luma %d", mPqBufferHandle[mPqBuffOutIndex].src_vt_fd);
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
+                        mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], PQ_CACL_LUMA);
+                    mPqBufferHandle[mPqBuffOutIndex].isFilled = false;
+                    mPqBuffOutIndex++;
+                    if (mPqBuffOutIndex == SIDEBAND_PQ_BUFF_CNT) {
+                        mPqBuffOutIndex = 0;
+                    }
+                }
+            } else if (!mPqPrepareList.empty()) {
+                int pqBufIndex = mPqPrepareList[0];
+                if (mPqBufferHandle[pqBufIndex].isFilled) {
+                    bool enableLuma = (mPqMode & PQ_CACL_LUMA) == PQ_CACL_LUMA;
+                    bool enablePqNormal = (mPqMode & PQ_NORMAL) == PQ_NORMAL;
+                    if (enablePqNormal && mUseIep) {
+                        mRkpq->dopq(mPqBufferHandle[pqBufIndex].src_vt_fd,
+                            mPqBufferHandle[pqBufIndex].out_vt_buffer->handle->data[0],
+                            enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
+                    } else if (enablePqNormal) {
+                        mRkpq->dopq(mPqBufferHandle[pqBufIndex].src_vt_fd,
+                            mPqBufferHandle[pqBufIndex].out_vt_buffer->handle->data[0],
+                            enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
+                    } else if ((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE) {
+                        mRkpq->dopq(mPqBufferHandle[pqBufIndex].src_vt_fd,
+                            mPqBufferHandle[pqBufIndex].out_vt_buffer->handle->data[0],
+                            enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
+                    }
+                    qBuf(mPqBufferHandle[pqBufIndex].src_vt_fd, true);
+                    mPqPrepareList.erase(mPqPrepareList.begin());
+                    mPqDoneList.push_back(pqBufIndex);
+                    if (!mUseIep) {
+                        showVTunnel(mPqBufferHandle[pqBufIndex].out_vt_buffer);
+                    }
+                }
+            }
+        } else if (mFrameType & TYPE_SIDEBAND_WINDOW
+                && mPqBufferHandle[mPqBuffOutIndex].isFilled) {
             bool showPqFrame = false;
             bool enableLuma = (mPqMode & PQ_CACL_LUMA) == PQ_CACL_LUMA;
             if ((mPqMode & PQ_NORMAL) == PQ_NORMAL) {
@@ -2371,13 +2474,8 @@ int HinDevImpl::pqBufferThread() {
                                 mIepBuffIndex = 0;
                              }
                          } else {
-                             if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                                    mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
-                             } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                                 mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
-                                    mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
-                             }
+                            mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                                mIepBufferHandle[mIepBuffIndex].srcHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_IEP):PQ_IEP);
                              mIepBufferHandle[mIepBuffIndex].isFilled = true;
                              mIepBuffIndex++;
                              if (mIepBuffIndex == SIDEBAND_IEP_BUFF_CNT) {
@@ -2386,42 +2484,23 @@ int HinDevImpl::pqBufferThread() {
                          }
                     }
                 } else {
-                    if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                        mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                            mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
-                    } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                        mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
-                            mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
-                    }
+                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_NORMAL):PQ_NORMAL);
                     showPqFrame = true;
                 }
             } else if (((mPqMode & PQ_LF_RANGE) == PQ_LF_RANGE && mPixelFormat == V4L2_PIX_FMT_BGR24)) {
-                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
-                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
-                        mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
-                }
+                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], enableLuma?(PQ_CACL_LUMA|PQ_LF_RANGE):PQ_LF_RANGE);
                 showPqFrame = true;
             } else if (enableLuma) {
-                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
-                        mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], PQ_CACL_LUMA);
-                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].src_vt_fd,
-                        mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer->handle->data[0], PQ_CACL_LUMA);
-                }
+                mRkpq->dopq(mPqBufferHandle[mPqBuffOutIndex].srcHandle->data[0],
+                    mPqBufferHandle[mPqBuffOutIndex].outHandle->data[0], PQ_CACL_LUMA);
             }
             if (mState != START) {
                 return NO_ERROR;
             }
             if (showPqFrame && !mPqIniting) {
-                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio, mHdmiInType);
-                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    showVTTunnel(mPqBufferHandle[mPqBuffOutIndex].out_vt_buffer);
-                }
+                mSidebandWindow->show(mPqBufferHandle[mPqBuffOutIndex].outHandle, mDisplayRatio, mHdmiInType);
             } else if(mDebugLevel == 3) {
                 ALOGE("pq mSidebandWindow no show, because showPqFrame false");
             }
@@ -2436,24 +2515,6 @@ int HinDevImpl::pqBufferThread() {
     usleep(500);
 
     return NO_ERROR;
-}
-
-void HinDevImpl::debugShowFPS() {
-    if (mShowFps == 0)
-        return;
-    static int mFrameCount = 0;
-    static int mLastFrameCount = 0;
-    static nsecs_t mLastFpsTime = 0;
-    static float mFps = 0;
-    mFrameCount++;
-    if (!(mFrameCount & 0x1F)) {
-        nsecs_t now = systemTime();
-        nsecs_t diff = now - mLastFpsTime;
-        mFps = ((mFrameCount - mLastFrameCount) * float(s2ns(1))) / diff;
-        mLastFpsTime = now;
-        mLastFrameCount = mFrameCount;
-        DEBUG_PRINT(3, "tvinput: %d Frames, %2.3f FPS", mFrameCount, mFps);
-    }
 }
 
 bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* dst_height) {
@@ -2479,8 +2540,42 @@ bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* d
 
 int HinDevImpl::iepBufferThread() {
     //Mutex::Autolock autoLock(mBufferLock); will happend rob wait if mBufferLock
-    if (mState == START) {
-        if (mPqMode != PQ_OFF && !mIepBufferHandle.empty() && mUseIep) {
+    if (mState == START && mPqMode != PQ_OFF && mUseIep) {
+        if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            Mutex::Autolock autoLock(mBufferLock);
+            if (mState == START && !mIepBufferHandle.empty() && !mIepPrepareList.empty()
+                    && !mPqDoneList.empty() && mPqDoneList.size() > 2) {
+                int pqBufIndex0 = mPqDoneList[0];
+                int pqBufIndex1 = mPqDoneList[1];
+                int pqBufIndex2 = mPqDoneList[2];
+                //DEBUG_PRINT(mDebugLevel, "pqBuf fill-%d, %d, %d", mPqBufferHandle[pqBufIndex0].isFilled,
+                //    mPqBufferHandle[pqBufIndex1].isFilled, mPqBufferHandle[pqBufIndex2].isFilled);
+                if (mPqBufferHandle[pqBufIndex0].isFilled
+                        && mPqBufferHandle[pqBufIndex1].isFilled
+                        && mPqBufferHandle[pqBufIndex2].isFilled) {
+                    DEBUG_PRINT(mDebugLevel, "do iep iep iep");
+                    int iepBufIndex = mIepPrepareList[0];
+                    mRkiep->iep2_deinterlace(mPqBufferHandle[pqBufIndex0].out_vt_buffer->handle->data[0],
+                        mPqBufferHandle[pqBufIndex1].out_vt_buffer->handle->data[0],
+                        mPqBufferHandle[pqBufIndex2].out_vt_buffer->handle->data[0],
+                        mIepBufferHandle[iepBufIndex].out_vt_buffer->handle->data[0],
+                        mIepTempHandle.out_vt_buffer->handle->data[0]);
+                    if (mState != START) {
+                        DEBUG_PRINT(mDebugLevel, "iep mState != START return NO_ERROR");
+                        return NO_ERROR;
+                    }
+                    //deal mPqDoneList and mPqPrepareList
+                    mPqBufferHandle[pqBufIndex0].src_vt_fd = -1;
+                    mPqBufferHandle[pqBufIndex0].isFilled = false;
+                    mPqDoneList.erase(mPqDoneList.begin());
+                    mPqPrepareList.push_back(pqBufIndex0);
+                    //iep show
+                    mIepPrepareList.erase(mIepPrepareList.begin());
+                    mIepDoneList.push_back(iepBufIndex);
+                    showVTunnel(mIepBufferHandle[iepBufIndex].out_vt_buffer);
+                }
+            }
+        } else if (mFrameType & TYPE_SIDEBAND_WINDOW && !mIepBufferHandle.empty()) {
             int cur = mIepBuffOutIndex;
             int last1 = (cur + SIDEBAND_IEP_BUFF_CNT -1)%SIDEBAND_IEP_BUFF_CNT;
             int last2 = (cur + SIDEBAND_IEP_BUFF_CNT -2)%SIDEBAND_IEP_BUFF_CNT;
@@ -2488,24 +2583,15 @@ int HinDevImpl::iepBufferThread() {
             if (mIepBufferHandle[cur].isFilled && mIepBufferHandle[last1].isFilled && mIepBufferHandle[last2].isFilled) {
                 int curIepOutIndex = mIepBuffOutIndex;
                 int nextIepOutIndex = (mIepBuffOutIndex + SIDEBAND_IEP_BUFF_CNT + 1)%SIDEBAND_IEP_BUFF_CNT;
-                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
-                        mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
-                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
-                        mIepBufferHandle[curIepOutIndex].out_vt_buffer->handle->data[0], mIepBufferHandle[nextIepOutIndex].out_vt_buffer->handle->data[0]);
-                }
+                mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
+                    mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
                 if (mState != START) {
                     if(mDebugLevel == 3) {
                         ALOGE("iep mState != START return NO_ERROR");
                     }
                     return NO_ERROR;
                 }
-                if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio, mHdmiInType);
-                } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    showVTTunnel(mIepBufferHandle[curIepOutIndex].out_vt_buffer);
-                }
+                mSidebandWindow->show(mIepBufferHandle[curIepOutIndex].outHandle, mDisplayRatio, mHdmiInType);
                 mIepBufferHandle[curIepOutIndex].isFilled = false;
                 mIepBuffOutIndex ++;
                 if (mIepBuffOutIndex == SIDEBAND_IEP_BUFF_CNT) {
@@ -2514,7 +2600,7 @@ int HinDevImpl::iepBufferThread() {
             }
         }
     }
-    usleep(500);
+    usleep(1000);
 
     return NO_ERROR;
 }
@@ -2544,39 +2630,3 @@ void HinDevImpl::set_interlaced(int interlaced) {
         mUseIep = false;
     }
 }
-
-// int HinDevImpl::previewBuffThread() {
-//     int ret;
-
-//     if (mState == START) {
-//         if (mHinNodeInfo->currBufferHandleIndex == SIDEBAND_WINDOW_BUFF_CNT)
-//              mHinNodeInfo->currBufferHandleIndex = mHinNodeInfo->currBufferHandleIndex % SIDEBAND_WINDOW_BUFF_CNT;
-
-//         DEBUG_PRINT(mDebugLevel, "%s %d currBufferHandleIndex = %d", __FUNCTION__, __LINE__, mHinNodeInfo->currBufferHandleIndex);
-
-//         ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
-//         if (ret < 0) {
-//             DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
-//             return -1;
-//         } else {
-//             DEBUG_PRINT(mDebugLevel, "VIDIOC_DQBUF successful.");
-//         }
-
-//         mSidebandWindow->buffDataTransfer(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
-//         mPreviewRawHandle[mPreviewBuffIndex++].isFilled = true;
-//         if (mPreviewBuffIndex == APP_PREVIEW_BUFF_CNT)
-//             mPreviewBuffIndex = mPreviewBuffIndex % APP_PREVIEW_BUFF_CNT;
-//         wrapCaptureResultAndNotify(mPreviewRawHandle[mPreviewBuffIndex].bufferId, mPreviewRawHandle[mPreviewBuffIndex].outHandle);
-//         debugShowFPS();
-
-//         ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
-//         if (ret != 0) {
-//             DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
-//         } else {
-//             DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF successful.");
-//         }
-//         mHinNodeInfo->currBufferHandleIndex++;
-
-//     }
-//     return NO_ERROR;
-// }

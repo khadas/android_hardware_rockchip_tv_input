@@ -148,10 +148,7 @@ class HinDevImpl {
 	int get_format(int fd, int &hdmi_in_width, int &hdmi_in_height,int& initFormat);
         int set_format(int width = 640, int height = 480, int color_format = V4L2_PIX_FMT_NV21);
         int get_HdmiIn(bool enforce);
-        int set_rotation(int degree);
         int set_crop(int x, int y, int width, int height);
-        int get_hin_crop(int *x, int *y, int *width, int *height);
-        int set_hin_crop(int x, int y, int width, int height);
         int set_preview_info(int top, int left, int width, int height);
         int set_preview_buffer(buffer_handle_t rawHandle, uint64_t bufferId);
         int aquire_buffer();
@@ -162,7 +159,6 @@ class HinDevImpl {
         int set_command_callback(NotifyCommandCallback callback);
         int set_frame_rate(int frameRate);
         int get_current_sourcesize(int&  width,int&  height,int& format);
-        int set_screen_mode(int mode);
         int start_device();
         int stop_device();
         int set_mode(int display_mode);
@@ -187,7 +183,6 @@ class HinDevImpl {
         void initPqInfo(int pqMode, int hdmi_range_mode);
         // int previewBuffThread();
         int makeHwcSidebandHandle();
-        void debugShowFPS();
         void wrapCaptureResultAndNotify(uint64_t buffId, buffer_handle_t handle, bool forceNotify);
         void doRecordCmd(const map<string, string> data);
         void doPQCmd(const map<string, string> data);
@@ -199,7 +194,9 @@ class HinDevImpl {
             buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride);
         int getOutRange(char* value);
         int get_extfmt_info();
-        int showVTTunnel(vt_buffer_t* vt_buffer);
+        void showVTunnel(vt_buffer_t* vt_buffer);
+        bool needShowPqFrame(int pqMode);
+        bool qBuf(int fd, bool noFoundLog);
     private:
         class WorkThread : public Thread {
             HinDevImpl* mSource;
@@ -275,7 +272,6 @@ class HinDevImpl {
         bool mIsHdmiIn;
         unsigned int flex_ratio;
         unsigned int flex_original;
-        int mFramecount = 0;
         int m_FrameHeight = 0;
         int m_FrameWidth = 0;
         int m_rest = 0;
@@ -307,7 +303,6 @@ class HinDevImpl {
         bool mOpen;
         int mDebugLevel;
         int mSkipFrame;
-        int mShowFps;
         int mDumpFrameCount;
         void *mUser;
         bool mV4L2DataFormatConvert;
@@ -316,12 +311,18 @@ class HinDevImpl {
         int mRequestCaptureCount = 0;
         std::vector<tv_preview_buff_app_t> mPreviewRawHandle;
         std::vector<tv_pq_buffer_info_t> mIepBufferHandle;
+        tv_pq_buffer_info_t mIepTempHandle;
+        std::vector<int> mIepPrepareList;
+        std::vector<int> mIepDoneList;
         int mRecordCodingBuffIndex = 0;
         int mDisplayRatio = FULL_SCREEN;
         int mPqMode = PQ_OFF;
+        bool mIsLastPqShowFrameMode = false;
         int mOutRange = HDMIRX_DEFAULT_RANGE;
         int mLastOutRange = mOutRange;
         std::vector<tv_pq_buffer_info_t> mPqBufferHandle;
+        std::vector<int> mPqPrepareList;
+        std::vector<int> mPqDoneList;
         int mPqBuffIndex = 0;
         int mPqBuffOutIndex = 0;
         rkpq *mRkpq=nullptr;
