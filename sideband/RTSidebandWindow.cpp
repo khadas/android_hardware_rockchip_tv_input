@@ -23,6 +23,7 @@
 
 #include "RTSidebandWindow.h"
 #include "log/log.h"
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <utils/Timers.h>
 #include <string.h>
@@ -619,6 +620,33 @@ int RTSidebandWindow::NV24ToNV12(buffer_handle_t srcHandle, buffer_handle_t dstH
         return 0;
     }
     return -1;
+}
+
+void RTSidebandWindow::readDataFromFile(const char *file_path, buffer_handle_t dstHandle) {
+    FILE* fp = fopen(file_path, "rb");
+    if(fp == NULL) {
+        ALOGD("open file %s , error %s\n", file_path, strerror(errno));
+        return;
+    }
+
+    unsigned int filesize = -1;
+    struct stat statbuff;
+    if (stat(file_path, &statbuff) < 0) {
+        return;
+    }
+    filesize = statbuff.st_size;
+    ALOGD("%s(%d) size of file :%s size is :\t%u bytes\n",
+        __func__, __LINE__, file_path, filesize);
+
+    unsigned char* tmpDstPtr = NULL;
+    int lockMode = GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK | GRALLOC_USAGE_HW_CAMERA_MASK;
+    mBuffMgr->LockLocked(dstHandle, lockMode, 0, 0, mBuffMgr->GetWidth(dstHandle), mBuffMgr->GetHeight(dstHandle), (void**)&tmpDstPtr);
+
+    unsigned int num_read = fread(tmpDstPtr, filesize, 1,fp);
+    ALOGD("fread num is %u\n", num_read);
+    fclose(fp);
+
+    mBuffMgr->UnlockLocked(dstHandle);
 }
 
 int RTSidebandWindow::writeData2File(const char *fileName, void *data, int dataSize) {

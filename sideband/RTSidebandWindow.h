@@ -95,6 +95,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t setCrop(int32_t left, int32_t top, int32_t right, int32_t bottom);
 
     status_t dumpImage(buffer_handle_t handle, char* fileName, int mode);
+    void readDataFromFile(const char *file_path, buffer_handle_t outHandle);
 
     int32_t  getWidth() { return mSidebandInfo.width; }
     int32_t  getHeight() { return mSidebandInfo.height; }
