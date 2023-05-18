@@ -668,6 +668,24 @@ int HinDevImpl::start_device()
     }
 
     aquire_buffer();
+    if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+        memset(&mCurrentPlanes, 0, sizeof(struct v4l2_plane));
+        memset(&mCurrentBufferArray, 0, sizeof(struct v4l2_buffer));
+        mCurrentBufferArray.index = 0;
+        mCurrentBufferArray.type = TVHAL_V4L2_BUF_TYPE;
+        mCurrentBufferArray.memory = TVHAL_V4L2_BUF_MEMORY_TYPE;
+        mCurrentBufferArray.m.planes = &mCurrentPlanes;
+        mCurrentBufferArray.length = PLANES_NUM;
+        ret = ioctl(mHinDevHandle, VIDIOC_QUERYBUF, &mCurrentBufferArray);
+        if (ret < 0) {
+            DEBUG_PRINT(3, "VIDIOC_QUERYBUF Failed, error: %s", strerror(errno));
+            return ret;
+        }
+        for (int i = 0; i < PLANES_NUM; i++) {
+            mCurrentBufferArray.m.planes[i].m.fd = mSidebandWindow->getBufferHandleFd(mHinNodeInfo->vt_buffers[0]->handle);
+            mCurrentBufferArray.m.planes[i].length = 0;
+        }
+    }
     for (int i = 0; i < mBufferCount; i++) {
         DEBUG_PRINT(mDebugLevel, "bufferArray index = %d", mHinNodeInfo->bufferArray[i].index);
         DEBUG_PRINT(mDebugLevel, "bufferArray type = %d", mHinNodeInfo->bufferArray[i].type);
@@ -1930,14 +1948,41 @@ int HinDevImpl::workThread()
             return 0;
         }
 
-        ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
+        int currDqbufHandleIndex = mHinNodeInfo->currBufferHandleIndex;
+        int currentDqBufFd = 0;
+        if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+            ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mCurrentBufferArray);
+        } else {
+            ret = ioctl(mHinDevHandle, VIDIOC_DQBUF, &mHinNodeInfo->bufferArray[currDqbufHandleIndex]);
+        }
         if (ret < 0) {
             DEBUG_PRINT(3, "VIDIOC_DQBUF Failed, error: %s", strerror(errno));
             return 0;
         } else {
-            if (mDebugLevel == 3) {
+            if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
+                bool findCorrectFd = false;
+                currentDqBufFd = mCurrentBufferArray.m.planes[0].m.fd;
+                for (int i = 0; i < SIDEBAND_WINDOW_BUFF_CNT; i++) {
+                    if (currentDqBufFd == mHinNodeInfo->vt_buffers[i]->handle->data[0]) {
+                        currDqbufHandleIndex = i;
+                        findCorrectFd = true;
+                        break;
+                    }
+                }
+                if (!findCorrectFd) {
+                    ALOGE("VIDIOC_DQBUF happen uncorrect err fd=%d", currentDqBufFd);
+                    for (int i = 0; i < SIDEBAND_WINDOW_BUFF_CNT; i++) {
+                        ALOGE("err vtunnel bufferArray fd=%d", mHinNodeInfo->vt_buffers[i]->handle->data[0]);
+                    }
+                }
+                if (mDebugLevel == 3) {
+                    ALOGE("VIDIOC_DQBUF mEnableDump=%d,mDumpFrameCount=%d, tid=%lu, currIndex=%d, fd=%d, %ld.%03ld-%ld",
+                        mEnableDump,mDumpFrameCount, tid, currDqbufHandleIndex, currentDqBufFd,
+                        (long)mCurrentBufferArray.timestamp.tv_sec, (long)(mCurrentBufferArray.timestamp.tv_usec/1000), (long)(systemTime()/1000000));
+                }
+            } else if (mDebugLevel == 3) {
                 ALOGE("VIDIOC_DQBUF successful.mEnableDump=%d,mDumpFrameCount=%d, tid=%lu, currBufferHandleIndex=%d, fd=%d",
-                    mEnableDump,mDumpFrameCount, tid, mHinNodeInfo->currBufferHandleIndex, mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd);
+                    mEnableDump,mDumpFrameCount, tid, currDqbufHandleIndex, mHinNodeInfo->bufferArray[currDqbufHandleIndex].m.planes[0].m.fd);
             }
         }
         if (mState != START) {
@@ -1950,9 +1995,9 @@ int HinDevImpl::workThread()
                 char fileName[128] = {0};
                 sprintf(fileName, "/data/system/dumpimage/tv_input_dump_%dx%d_%d.yuv", mSrcFrameWidth, mSrcFrameHeight, mDumpFrameCount);
                 if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                    mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], fileName, 0);
+                    mSidebandWindow->dumpImage(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], fileName, 0);
                 } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                    mSidebandWindow->dumpImage(mHinNodeInfo->vt_buffers[mHinNodeInfo->currBufferHandleIndex]->handle, fileName, 0);
+                    mSidebandWindow->dumpImage(mHinNodeInfo->vt_buffers[currDqbufHandleIndex]->handle, fileName, 0);
                 }
                 mDumpFrameCount--;
             }
@@ -1961,10 +2006,9 @@ int HinDevImpl::workThread()
         if (mFrameType & TYPE_SIDEBAND_WINDOW || mFrameType & TYPE_SIDEBAND_VTUNNEL) {
             // add flushCache to prevent image tearing and ghosting caused by
             // cache consistency issues
-            int currPreviewHandlerIndex = mHinNodeInfo->currBufferHandleIndex;
             if (mFrameType & TYPE_SIDEBAND_WINDOW) {
             ret = mSidebandWindow->flushCache(
-                mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex]);
+                mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex]);
             if (ret != 0) {
                 DEBUG_PRINT(3, "mSidebandWindow->flushCache failed !!!");
                 return ret;
@@ -1973,12 +2017,12 @@ int HinDevImpl::workThread()
 
             if (mPqMode != PQ_OFF && !mPqBufferHandle.empty()) {
                 if (mPqBufferHandle[mPqBuffIndex].isFilled) {
-                    DEBUG_PRINT(3, "skip pq buffer");
+                    DEBUG_PRINT(mDebugLevel, "skip pq buffer");
                 } else {
                     if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                        mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex];
+                        mPqBufferHandle[mPqBuffIndex].srcHandle = mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex];
                     } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                        mPqBufferHandle[mPqBuffIndex].src_vt_fd = mHinNodeInfo->bufferArray[currPreviewHandlerIndex].m.planes[0].m.fd;
+                        mPqBufferHandle[mPqBuffIndex].src_vt_fd = mHinNodeInfo->bufferArray[currDqbufHandleIndex].m.planes[0].m.fd;
                     }
                     mPqBufferHandle[mPqBuffIndex].isFilled = true;
                     mPqBuffIndex++;
@@ -1998,12 +2042,12 @@ int HinDevImpl::workThread()
                     DEBUG_PRINT(3, "mSkipFrame not to show %d", mSkipFrame);
                 } else {
                     if (mDebugLevel == 3) {
-                        ALOGE("sidebandwindow show index=%d", currPreviewHandlerIndex);
+                        ALOGE("sidebandwindow show index=%d", currDqbufHandleIndex);
                     }
                     if (mFrameType & TYPE_SIDEBAND_WINDOW) {
-                        mSidebandWindow->show(mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mDisplayRatio, mHdmiInType);
+                        mSidebandWindow->show(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mDisplayRatio, mHdmiInType);
                     } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
-                        showVTTunnel(mHinNodeInfo->vt_buffers[currPreviewHandlerIndex]);
+                        showVTTunnel(mHinNodeInfo->vt_buffers[currDqbufHandleIndex]);
                     }
                 }
             }
@@ -2016,7 +2060,7 @@ int HinDevImpl::workThread()
                 if(!mRecordHandle.empty()) {
                     tv_record_buffer_info_t recordBuffer = mRecordHandle[mRecordCodingBuffIndex];
                     if (!recordBuffer.isCoding) {
-                        buffDataTransfer(mHinNodeInfo->buffer_handle_poll[currPreviewHandlerIndex], mPixelFormat,
+                        buffDataTransfer(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mPixelFormat,
                             mSrcFrameWidth, mSrcFrameHeight,
                             recordBuffer.outHandle, V4L2_PIX_FMT_NV12,
                             recordBuffer.width, recordBuffer.height, recordBuffer.verStride, recordBuffer.horStride);
@@ -2030,7 +2074,7 @@ int HinDevImpl::workThread()
                                 gMppEnCodeServer->mEncoder->mVerStride * 3 / 2;
                 inDmaBuf.handler =
                     (void *)mHinNodeInfo
-                    ->buffer_handle_poll[currPreviewHandlerIndex];
+                    ->buffer_handle_poll[currDqbufHandleIndex];
                 inDmaBuf.index = mRecordCodingBuffIndex;
                 mRecordHandle[mRecordCodingBuffIndex].isCoding = true;
                 mRecordCodingBuffIndex++;
@@ -2056,23 +2100,23 @@ int HinDevImpl::workThread()
                 gMppEnCodeServer->start();
                 mEncodeThreadRunning = true;
              }
-            ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex]);
+            ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[currDqbufHandleIndex]);
             if (ret != 0) {
                 DEBUG_PRINT(3, "VIDIOC_QBUF Buffer failed %s", strerror(errno));
             } else {
-                DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF %d successful.", mHinNodeInfo->currBufferHandleIndex);
+                DEBUG_PRINT(mDebugLevel, "VIDIOC_QBUF %d successful.", currDqbufHandleIndex);
             }
         } else {
             if (mV4L2DataFormatConvert) {
-                mSidebandWindow->buffDataTransfer(mHinNodeInfo->buffer_handle_poll[mHinNodeInfo->currBufferHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
+                mSidebandWindow->buffDataTransfer(mHinNodeInfo->buffer_handle_poll[currDqbufHandleIndex], mPreviewRawHandle[mPreviewBuffIndex].outHandle);
             }
             if (mRkpq == nullptr) {
             } else {
                 Mutex::Autolock autoLock(mBufferLock);
-                mRkpq->dopq(mHinNodeInfo->bufferArray[mHinNodeInfo->currBufferHandleIndex].m.planes[0].m.fd,
-                    mPreviewRawHandle[mHinNodeInfo->currBufferHandleIndex].bufferFd, PQ_LF_RANGE);
-                wrapCaptureResultAndNotify(mPreviewRawHandle[mHinNodeInfo->currBufferHandleIndex].bufferId,
-                    mPreviewRawHandle[mHinNodeInfo->currBufferHandleIndex].outHandle, false);
+                mRkpq->dopq(mHinNodeInfo->bufferArray[currDqbufHandleIndex].m.planes[0].m.fd,
+                    mPreviewRawHandle[currDqbufHandleIndex].bufferFd, PQ_LF_RANGE);
+                wrapCaptureResultAndNotify(mPreviewRawHandle[currDqbufHandleIndex].bufferId,
+                    mPreviewRawHandle[currDqbufHandleIndex].outHandle, false);
             }
         }
         debugShowFPS();

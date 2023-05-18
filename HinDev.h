@@ -326,5 +326,7 @@ class HinDevImpl {
         int mEnableDump = 0;
         int mHdmiInType = HDMIIN_TYPE_HDMIRX;
         int mQbufCount = 0;
+        struct v4l2_plane mCurrentPlanes;
+        struct v4l2_buffer mCurrentBufferArray;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;
 };
