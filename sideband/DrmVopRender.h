@@ -98,9 +98,10 @@ public:
         buffer_handle_t handle, int displayRatio, int hdmiInType);
     bool ClearDrmPlaneContent(int device, int32_t width, int32_t height);
     void setDebugLevel(int debugLevel);
+    int getSidebandPlaneId();
 private:
     void resetOutput(int index);
-    bool FindSidebandPlane(int device);
+    int FindSidebandPlane(int device);
     uint32_t getDrmEncoder(int device);
 
     // map device type to output index, return -1 if not mapped
@@ -164,6 +165,7 @@ private:
     const gralloc_module_t *gralloc_;
     int mDebugLevel = 0;
     bool mEnableOverScan = false;
+    int mSidebandPlaneId;
 };
 
 } // namespace android

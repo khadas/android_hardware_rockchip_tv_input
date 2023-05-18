@@ -112,9 +112,15 @@ typedef struct tv_preview_buff_app {
 //     bool isFilled;
 // } tv_input_preview_buff_t;
 
+typedef struct tv_input_command{
+    int command_id;
+} tv_input_command_t;
+
 typedef void (*NotifyQueueDataCallback)(tv_input_capture_result_t result, uint64_t buff_id);
 
 typedef void (*app_data_callback)(void *user, source_buffer_info_t *buff_info);
+
+typedef void (*NotifyCommandCallback)(tv_input_command command);
 
 #define HIN_GRALLOC_USAGE  GRALLOC_USAGE_HW_TEXTURE | \
                                     GRALLOC_USAGE_HW_RENDER | \
@@ -153,6 +159,7 @@ class HinDevImpl {
         int release_buffer();
         int set_preview_callback(NotifyQueueDataCallback callback);
         int set_data_callback(V4L2EventCallBack callback);
+        int set_command_callback(NotifyCommandCallback callback);
         int set_frame_rate(int frameRate);
         int get_current_sourcesize(int&  width,int&  height,int& format);
         int set_screen_mode(int mode);
@@ -177,7 +184,7 @@ class HinDevImpl {
         int pqBufferThread();
         int iepBufferThread();
         int getPqFmt(int V4L2Fmt);
-        void initPqInfo(int pqMode);
+        void initPqInfo(int pqMode, int hdmi_range_mode);
         // int previewBuffThread();
         int makeHwcSidebandHandle();
         void debugShowFPS();
@@ -190,6 +197,7 @@ class HinDevImpl {
         void stopRecord();
         void buffDataTransfer(buffer_handle_t srcHandle, int srcFmt, int srcWidth, int srcHeight,
             buffer_handle_t dstHandle, int dstFmt, int dstWidth, int dstHeight, int dstWStride, int dstHStride);
+        int getOutRange(char* value);
         int get_extfmt_info();
         int showVTTunnel(vt_buffer_t* vt_buffer);
     private:
@@ -274,6 +282,7 @@ class HinDevImpl {
         int m_displaymode;
         volatile int mState;
         NotifyQueueDataCallback mNotifyQueueCb;
+        NotifyCommandCallback mNotifyCommandCb = NULL;
         int mPixelFormat;
         int mNativeWindowPixelFormat;
         sp<ANativeWindow> mANativeWindow;
@@ -316,16 +325,19 @@ class HinDevImpl {
         int mPqBuffIndex = 0;
         int mPqBuffOutIndex = 0;
         rkpq *mRkpq=nullptr;
-        bool mUseZme;
+        bool mUseZme = false;
+        bool mLastZmeStatus = false;
         rkiep *mRkiep=nullptr;
         int mIepBuffIndex = 0;
         int mIepBuffOutIndex = 0;
         bool mUseIep = false;
         bool mPqIniting = false;
-        int mLastPqStatus = 0;
+        int mLastPqStatus = -1;
         int mEnableDump = 0;
-        int mHdmiInType = HDMIIN_TYPE_HDMIRX;
+        int mHdmiInType = HDMIIN_TYPE_HDMIRX;//0 hdmirx, 1 mipicsi
         int mQbufCount = 0;
+        int mDstColorSpace = 0;
+        bool mUpdateColorSpace = false;
         struct v4l2_plane mCurrentPlanes;
         struct v4l2_buffer mCurrentBufferArray;
         // std::vector<tv_input_preview_buff_t> mPreviewBuff;

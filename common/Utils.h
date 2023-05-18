@@ -74,6 +74,7 @@ enum DisplayRatio{
 };
 
 #define PQ_OFF           0
+#define CMD_HDMIIN_RESET 0x1001
 
 static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
     GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN |
@@ -85,11 +86,12 @@ static const int64_t STREAM_BUFFER_GRALLOC_USAGE = (
 #define TV_INPUT_PQ_MODE "persist.vendor.tvinput.rkpq.mode"
 #define TV_INPUT_PQ_RANGE "persist.vendor.tvinput.rkpq.range"
 #define TV_INPUT_PQ_LUMA "persist.vendor.tvinput.rkpq.luma"
+#define TV_INPUT_PQ_AUTO_DETECTION "persist.vendor.tvinput.rkpq.auto.detection"
 #define TV_INPUT_HDMIIN "vendor.tvinput.rk.hdmiin"
 
 #define TV_INPUT_RESOLUTION_MAIN "persist.vendor.resolution.main"
 #define TV_INPUT_OVERSCAN_PREF "persist.vendor.overscan."
-
+#define TV_INPUT_HDMI_RANGE "persist.vendor.tvinput.rkpq.range"
 #define TV_INPUT_HDMIIN_TYPE "vendor.tvinput.hdmiin.type"
 #define TV_INPUT_SHOW_FPS "vendor.tvinput.showfps"
 #define TV_INPUT_DISPLAY_RATIO "vendor.tvinput.displayratio"

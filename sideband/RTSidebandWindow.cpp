@@ -718,4 +718,11 @@ int RTSidebandWindow::dumpImage(buffer_handle_t handle, char* fileName, int mode
     return ret;
 }
 
+int RTSidebandWindow::getSidebandPlaneId() {
+    if (mVopRender) {
+        return mVopRender->getSidebandPlaneId();
+    } else {
+        return 0;
+    }
+}
 }

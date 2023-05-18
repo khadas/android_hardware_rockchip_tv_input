@@ -25,7 +25,8 @@ namespace android {
 #define ALIGN(x, a) (((x) + (a)-1) & ~((a)-1))
 
 DrmVopRender::DrmVopRender()
-    : mDrmFd(0)
+    : mDrmFd(0),
+    mSidebandPlaneId(0)
 {
     memset(&mOutputs, 0, sizeof(mOutputs));
     ALOGE("DrmVopRender");
@@ -458,7 +459,7 @@ uint32_t DrmVopRender::ConvertHalFormatToDrm(uint32_t hal_format) {
   }
 }
 
-bool DrmVopRender::FindSidebandPlane(int device) {
+int DrmVopRender::FindSidebandPlane(int device) {
     Mutex::Autolock autoLock(mVopPlaneLock);
     drmModePlanePtr plane;
     drmModeObjectPropertiesPtr props;
@@ -541,7 +542,7 @@ bool DrmVopRender::FindSidebandPlane(int device) {
         if(plane)
             drmModeFreePlane(plane);
     }
-    return find_plan_id > 0;
+    return find_plan_id;
 }
 
 int DrmVopRender::getFbLength(buffer_handle_t handle) {
@@ -738,7 +739,9 @@ bool DrmVopRender::SetDrmPlane(int device, int32_t width, int32_t height,
     }
 
     int ret = 0;
-    bool findAvailedPlane = FindSidebandPlane(device);
+    int find_plan_id = FindSidebandPlane(device);
+    mSidebandPlaneId = find_plan_id;
+    bool findAvailedPlane = find_plan_id > 0;
     int fb_id = findAvailedPlane?getFbid(handle, hdmiInType):-1;
     int flags = 0;
     int src_left = 0;
@@ -999,5 +1002,8 @@ int DrmVopRender::getOutputIndex(int device)
     return -1;
 }
 
+int DrmVopRender::getSidebandPlaneId() {
+    return mSidebandPlaneId;
+}
 } // namespace android
 

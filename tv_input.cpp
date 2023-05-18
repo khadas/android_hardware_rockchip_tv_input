@@ -134,14 +134,23 @@ V4L2EventCallBack hinDevEventCallback(int event_type) {
              event.priv_app_cmd.action = "hdmiinout";
              }
              break;
+        case CMD_HDMIIN_RESET:
+             event.base_event.type = TV_INPUT_EVENT_PRIV_CMD_TO_APP;
+             event.priv_app_cmd.action = "hdmiinreset";
+             break;
     }
     ALOGE("%s width:%d,height:%d,format:0x%x,%d", __FUNCTION__,s_HinDevStreamWidth,s_HinDevStreamHeight,s_HinDevStreamFormat,isHdmiIn);
     event.base_event.device_info.device_id = SOURCE_HDMI1;
     event.base_event.device_info.type = TV_INPUT_TYPE_HDMI;
     event.base_event.device_info.audio_type = AUDIO_DEVICE_NONE;
     event.base_event.device_info.audio_address = NULL;
-    if(event.base_event.type > 0)
+    if(event.base_event.type > 0) {
       s_TvInputPriv->callback->notify_ext(nullptr, &event, nullptr);
+    }
+    return 0;
+}
+NotifyCommandCallback commandCallback(tv_input_command command) {
+    hinDevEventCallback(command.command_id);
     return 0;
 }
 
@@ -178,6 +187,7 @@ static int hin_dev_open(int deviceId, int type)
             }
             s_TvInputPriv->mDev = hinDevImpl;
             s_TvInputPriv->mDev->set_data_callback((V4L2EventCallBack)hinDevEventCallback);
+            s_TvInputPriv->mDev->set_command_callback((NotifyCommandCallback)commandCallback);
             if (s_TvInputPriv->mDev->findDevice(deviceId, s_HinDevStreamWidth, s_HinDevStreamHeight,s_HinDevStreamFormat)!= 0) {
                 ALOGE("hinDevImpl->findDevice %d failed!", deviceId);
                 delete s_TvInputPriv->mDev;

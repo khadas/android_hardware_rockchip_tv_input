@@ -107,6 +107,7 @@ class RTSidebandWindow : public RefBase, IMessageHandler {
     status_t show(buffer_handle_t buffer, int displayRadio, int hdmiInType);
     status_t clearVopArea();
     void setDebugLevel(int debugLevel);
+    int getSidebandPlaneId();
 
  private:
     RTSidebandWindow(const RTSidebandWindow& other);
