@@ -393,6 +393,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
                     }
                     ALOGE("csiNum=%s", strCsiNum.c_str());
                 } else {
+                    close(videofd);
                     continue;
                 }
                 mHinDevEventHandle = videofd;
@@ -402,7 +403,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
     }
     if (mHinDevEventHandle > 0 && mHinDevHandle < 0) {
         rewinddir(devdir);
-        string strMinVideoPath = "zzzzzzzz";
+        int minVideoPathIndex = 999999;
         int tempVideoFd = -1;
         while ((de = readdir(devdir)) != 0) {
             if (!strncmp(kPrefix, de->d_name, kPrefixLen)) {
@@ -434,8 +435,10 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
                     char cur_bus_info[kMaxDevicePathLen];
                     snprintf(cur_bus_info, 32,"%s",cap.bus_info);
                     if (strcmp(standard_bus_info, cur_bus_info) == 0) {
-                        if (strMinVideoPath.compare(videoPath) > 0) {
-                            strMinVideoPath = videoPath;
+                        int tempVideoPathIndex = 0;
+                        if (1 == sscanf(videoPath, "/dev/video%d", &tempVideoPathIndex)
+                                && minVideoPathIndex > tempVideoPathIndex) {
+                            minVideoPathIndex = tempVideoPathIndex;
                             if (tempVideoFd > -1) {
                                 close(tempVideoFd);
                             }
@@ -451,7 +454,7 @@ int HinDevImpl::findDevice(int id, int& initWidth, int& initHeight,int& initForm
         }
         if (tempVideoFd > -1) {
             mHinDevHandle = tempVideoFd;
-            ALOGE("min %s", strMinVideoPath.c_str());
+            ALOGE("min /dev/video%d", minVideoPathIndex);
         }
     }
     closedir(devdir);

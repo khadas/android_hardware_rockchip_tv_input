@@ -117,6 +117,7 @@ status_t RTSidebandWindow::release() {
     ALOGW("%s mVTDevFd=%d, mVTID=%d", __FUNCTION__, mVTDevFd, mVTID);
     if (mVTID >= 0) {
         rk_vt_disconnect(mVTDevFd, mVTID, RKVT_ROLE_PRODUCER);
+        rk_vt_reset(mVTDevFd, mVTID);
         rk_vt_free_id(mVTDevFd, mVTID);
         rk_vt_close(mVTDevFd);
     }
