@@ -2521,6 +2521,10 @@ int HinDevImpl::pqBufferThread() {
 }
 
 bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* dst_height) {
+    int pq_enable = property_get_int32(TV_INPUT_PQ_ENABLE, 0);
+    if(!pq_enable) {
+        return false;
+    }
     *dst_width = src_width;
     *dst_height = src_height;
     uint32_t width = 0, height = 0;
@@ -2531,7 +2535,6 @@ bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* d
     } else {
         mRkpq->getResolutionInfo(&width, &height);
     }
-    int pq_enable = property_get_int32(TV_INPUT_PQ_ENABLE, 0);
     if(src_width == 1920 && src_height == 1080 &&
         width == 3840 && height == 2160 && pq_enable && check_interlaced() == 0) {
         *dst_width = width;
