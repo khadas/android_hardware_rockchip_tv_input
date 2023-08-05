@@ -2129,6 +2129,13 @@ int HinDevImpl::workThread()
                 DEBUG_PRINT(3, "mSkipFrame not to show %d", mSkipFrame);
                 return NO_ERROR;
             }
+
+            if (mUseZme && mPqMode == PQ_OFF) {
+                ret = ioctl(mHinDevHandle, VIDIOC_QBUF, &mHinNodeInfo->bufferArray[currDqbufHandleIndex]);
+                DEBUG_PRINT(3, "wait zme prepared");
+                return NO_ERROR;
+            }
+
             bool showPqFrame = false;
             if (mPqMode != PQ_OFF && needShowPqFrame(mPqMode)) {
                 nsecs_t startTime = systemTime();
