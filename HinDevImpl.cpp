@@ -1688,19 +1688,19 @@ void HinDevImpl::doPQCmd(const map<string, string> data) {
                 mIepBufferHandle.resize(SIDEBAND_IEP_BUFF_CNT);
                 for (int i=0; i<mIepBufferHandle.size(); i++) {
                     mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].srcHandle, mDstFrameWidth, mDstFrameHeight,
-                    HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                    HAL_PIXEL_FORMAT_YCbCr_422_SP, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
                     if (mFrameType & TYPE_SIDEBAND_WINDOW) {
                         mSidebandWindow->allocateSidebandHandle(&mIepBufferHandle[i].outHandle, mDstFrameWidth, mDstFrameHeight,
-                        HAL_PIXEL_FORMAT_YCrCb_NV12, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
+                        HAL_PIXEL_FORMAT_YCbCr_422_SP, RK_GRALLOC_USAGE_STRIDE_ALIGN_64);
                     } else if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
                         mSidebandWindow->allocateBuffer(&mIepBufferHandle[i].out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
-                            HAL_PIXEL_FORMAT_YCrCb_NV12,
+                            HAL_PIXEL_FORMAT_YCbCr_422_SP,
                             RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
                     }
                 }
                 if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
                     mSidebandWindow->allocateBuffer(&mIepTempHandle.out_vt_buffer, mDstFrameWidth, mDstFrameHeight,
-                            HAL_PIXEL_FORMAT_YCrCb_NV12,
+                            HAL_PIXEL_FORMAT_YCbCr_422_SP,
                             RK_GRALLOC_USAGE_STRIDE_ALIGN_64 | MALI_GRALLOC_USAGE_NO_AFBC);
                 }
             }
@@ -1811,7 +1811,7 @@ void HinDevImpl::initPqInfo(int pqMode, int hdmi_range_mode) {
         } else if(!mUseIep) {
             mRkpq->init(mSrcFrameWidth, mSrcFrameHeight, width_stride, mDstFrameWidth, mDstFrameHeight, alignment, fmt, src_color_space, RKPQ_IMG_FMT_NV24, dst_color_space, flag);
         } else {
-            mRkpq->init(mSrcFrameWidth, mSrcFrameHeight, width_stride, mDstFrameWidth, mDstFrameHeight, alignment, fmt, src_color_space, RKPQ_IMG_FMT_NV12, dst_color_space, flag);
+            mRkpq->init(mSrcFrameWidth, mSrcFrameHeight, width_stride, mDstFrameWidth, mDstFrameHeight, alignment, fmt, src_color_space, RKPQ_IMG_FMT_NV16, dst_color_space, flag);
         }
         mDstColorSpace = dst_color_space;
         mUpdateColorSpace = true;
@@ -2554,6 +2554,7 @@ bool HinDevImpl::check_zme(int src_width, int src_height, int* dst_width, int* d
 int HinDevImpl::iepBufferThread() {
     //Mutex::Autolock autoLock(mBufferLock); will happend rob wait if mBufferLock
     if (mState == START && mPqMode != PQ_OFF && mUseIep) {
+        int iepDilOrder = 0;
         if (mFrameType & TYPE_SIDEBAND_VTUNNEL) {
             Mutex::Autolock autoLock(mBufferLock);
             if (mState == START && !mIepBufferHandle.empty() && !mIepPrepareList.empty()
@@ -2572,7 +2573,7 @@ int HinDevImpl::iepBufferThread() {
                         mPqBufferHandle[pqBufIndex1].out_vt_buffer->handle->data[0],
                         mPqBufferHandle[pqBufIndex2].out_vt_buffer->handle->data[0],
                         mIepBufferHandle[iepBufIndex].out_vt_buffer->handle->data[0],
-                        mIepTempHandle.out_vt_buffer->handle->data[0]);
+                        mIepTempHandle.out_vt_buffer->handle->data[0], &iepDilOrder);
                     if (mState != START) {
                         DEBUG_PRINT(mDebugLevel, "iep mState != START return NO_ERROR");
                         return NO_ERROR;
@@ -2597,7 +2598,7 @@ int HinDevImpl::iepBufferThread() {
                 int curIepOutIndex = mIepBuffOutIndex;
                 int nextIepOutIndex = (mIepBuffOutIndex + SIDEBAND_IEP_BUFF_CNT + 1)%SIDEBAND_IEP_BUFF_CNT;
                 mRkiep->iep2_deinterlace(mIepBufferHandle[cur].srcHandle->data[0], mIepBufferHandle[last1].srcHandle->data[0], mIepBufferHandle[last2].srcHandle->data[0],
-                    mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0]);
+                    mIepBufferHandle[curIepOutIndex].outHandle->data[0], mIepBufferHandle[nextIepOutIndex].outHandle->data[0], &iepDilOrder);
                 if (mState != START) {
                     if(mDebugLevel == 3) {
                         ALOGE("iep mState != START return NO_ERROR");
