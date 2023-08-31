@@ -250,20 +250,25 @@ int HinDevImpl::init(int id,int initType, int& initWidth, int& initHeight,int& i
             mFrameType |= TYPE_SIDEBAND_WINDOW;
         } else {
             mFrameType |= TYPE_SIDEBAND_VTUNNEL;
-            info.data_space = 0x2;
-            if (V4L2_PIX_FMT_BGR24 != mPixelFormat) {
-                get_extfmt_info();
-                if (mFrameColorRange == HDMIRX_LIMIT_RANGE) {
-                    info.data_space = HAL_DATASPACE_RANGE_LIMITED;
-                } else if (mFrameColorRange == HDMIRX_FULL_RANGE) {
-                    info.data_space = HAL_DATASPACE_RANGE_FULL;
-                } else {
-                    info.data_space = HAL_DATASPACE_RANGE_FULL;
-                }
-                if (mFrameColorSpace == HDMIRX_XVYCC601 || mFrameColorSpace == HDMIRX_SYCC601) {
-                    info.data_space |= HAL_DATASPACE_STANDARD_BT601_625;
-                } else {
-                    info.data_space |= HAL_DATASPACE_STANDARD_BT709;
+            if (property_get_int32(TV_INPUT_PQ_ENABLE, 0)) {
+                info.data_space = HAL_DATASPACE_STANDARD_BT601_625
+                    | HAL_DATASPACE_TRANSFER_SMPTE_170M | HAL_DATASPACE_RANGE_FULL;
+            } else {
+                info.data_space = 0x2;
+                if (V4L2_PIX_FMT_BGR24 != mPixelFormat) {
+                    get_extfmt_info();
+                    if (mFrameColorRange == HDMIRX_LIMIT_RANGE) {
+                        info.data_space = HAL_DATASPACE_RANGE_LIMITED;
+                    } else if (mFrameColorRange == HDMIRX_FULL_RANGE) {
+                        info.data_space = HAL_DATASPACE_RANGE_FULL;
+                    } else {
+                        info.data_space = HAL_DATASPACE_RANGE_FULL;
+                    }
+                    if (mFrameColorSpace == HDMIRX_XVYCC601 || mFrameColorSpace == HDMIRX_SYCC601) {
+                        info.data_space |= HAL_DATASPACE_STANDARD_BT601_625 | HAL_DATASPACE_TRANSFER_SMPTE_170M;
+                    } else {
+                        info.data_space |= HAL_DATASPACE_STANDARD_BT709;
+                    }
                 }
             }
             info.compress_mode = 0;
@@ -1801,7 +1806,7 @@ void HinDevImpl::initPqInfo(int pqMode, int hdmi_range_mode) {
             if (!strcmp(prop_value, "auto") && src_color_space == RKPQ_CLR_SPC_RGB_LIMITED) {
                 dst_color_space = RKPQ_CLR_SPC_YUV_601_FULL;
             } else if (!strcmp(prop_value, "limit")) {
-                    dst_color_space = RKPQ_CLR_SPC_YUV_601_LIMITED;
+                dst_color_space = RKPQ_CLR_SPC_YUV_601_LIMITED;
             }
         int flag = RKPQ_FLAG_CALC_MEAN_LUMA | RKPQ_FLAG_HIGH_PERFORM;
         ALOGD("rkpq init %dx%d stride=%d-%d, fmt=%d, space=%d-%d, flag=%d, alignment=%d",
@@ -2355,15 +2360,18 @@ int HinDevImpl::pqBufferThread() {
         mLastZmeStatus = mUseZme;
         mLastPqStatus = value;
     } else if (mLastPqStatus != value) {
-        mUseZme = check_zme(mSrcFrameWidth, mSrcFrameHeight, &mDstFrameWidth, &mDstFrameHeight);
-        if (mLastZmeStatus != mUseZme){ 
+        /*The stream needs to be reopened when the pq state changes
+            to get the correct colorspace and zme states.
+        */
+        //mUseZme = check_zme(mSrcFrameWidth, mSrcFrameHeight, &mDstFrameWidth, &mDstFrameHeight);
+        //if (mLastZmeStatus != mUseZme){
             mPqIniting = true;
             tv_input_command command;
             command.command_id = CMD_HDMIIN_RESET;
             if(mNotifyCommandCb != NULL) {
                 mNotifyCommandCb(command);
             }
-        }
+        //}
         mLastZmeStatus = mUseZme;
         mLastPqStatus = value;
     }
